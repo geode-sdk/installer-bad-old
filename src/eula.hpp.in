@@ -1,0 +1,3 @@
+#pragma once
+
+static constexpr const char* g_eula = R"EULA(@GEODE_EULA@)EULA";
