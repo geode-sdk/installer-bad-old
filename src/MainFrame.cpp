@@ -48,7 +48,7 @@ MainFrame::MainFrame() : wxFrame(
     wxDefaultPosition,
     { 440, 380 }
 ) {
-    this->SetBackgroundColour({ 255, 255, 255 });
+    //this->SetBackgroundColour({ 255, 255, 255 });
     this->CenterOnScreen();
 
     this->Bind(wxEVT_LEFT_DOWN, &MainFrame::OnMouseLeftDown, this);
@@ -91,6 +91,8 @@ MainFrame::MainFrame() : wxFrame(
     this->LoadInstallInfo();
     this->SetupPages();
     this->GoToPage(PageID::Start);
+
+    this->SetMinSize({330, 285});
 
     this->Layout();
 }

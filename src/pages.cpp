@@ -10,6 +10,9 @@
 #ifdef _WIN32
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
+#elif defined(__APPLE__)
+#define PLATFORM_ASSET_IDENTIFIER "mac"
+#define PLATFORM_NAME "MacOS"
 #else
 #error "Define PLATFORM_ASSET_IDENTIFIER & PLATFORM_NAME"
 #endif
@@ -154,7 +157,7 @@ void MainFrame::SetupPages() {
         }
         
         void Leave() override {
-            auto path = std::filesystem::path(
+            auto path = ghc::filesystem::path(
                 m_pathInput->GetValue().ToStdWstring()
             );
             if (path.has_parent_path()) {
@@ -180,8 +183,8 @@ void MainFrame::SetupPages() {
         void UpdateContinue() {
             auto path = m_pathInput->GetValue().ToStdWstring();
             m_canContinue =
-                std::filesystem::exists(path) &&
-                std::filesystem::is_regular_file(path);
+                ghc::filesystem::exists(path) &&
+                ghc::filesystem::is_regular_file(path);
             m_frame->UpdateCanContinue();
         }
 

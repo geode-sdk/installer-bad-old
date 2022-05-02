@@ -1,11 +1,14 @@
 #include "MainFrame.hpp"
 #include <fstream>
 #include "json.hpp"
+#include "objc.h"
 #include <wx/zipstrm.h>
 #include <wx/wfstream.h>
 #include <wx/stdpaths.h>
 #ifdef _WIN32
 #include <wx/msw/registry.h>
+#elif defined(__APPLE__)
+#include <CoreServices/CoreServices.h>
 #endif
 
 void MainFrame::LoadInstallInfo() {
@@ -18,9 +21,29 @@ void MainFrame::LoadInstallInfo() {
         installInfo = value;
         m_firstTime = false;
     }
+    #elif defined(__APPLE__)
+    FSRef ref;
+    OSType folderType = kApplicationSupportFolderType;
+    char path[PATH_MAX];
+
+    FSFindFolder(kUserDomain, folderType, kCreateFolder, &ref);
+    FSRefMakePath(&ref, (UInt8*)&path, PATH_MAX);
+
+    ghc::filesystem::path parent(path);
+    parent = parent / "GeodeSDK";
+    std::string installInfo = "";
+    if (ghc::filesystem::exists(parent)) {
+        m_firstTime = false;
+        installInfo = (parent / "GeodeInstallationInfo.json").string();
+    }
+    #else
+    static_assert(false, "Implement MainFrame::LoadInstallInfo!");
+    // get json file location
+    #endif
+
     if (installInfo.size()) {
-        std::filesystem::path path(installInfo);
-        if (std::filesystem::exists(path)) {
+        ghc::filesystem::path path(installInfo);
+        if (ghc::filesystem::exists(path)) {
             std::ifstream file(path);
             if (!file.is_open()) return;
             std::string data(std::istreambuf_iterator<char>{file}, {});
@@ -37,16 +60,26 @@ void MainFrame::LoadInstallInfo() {
             }
         }
     }
-    #else
-    static_assert(false, "Implement MainFrame::LoadInstallInfo!");
-    // Just store the path to the install info directory somewhere 
-    // and read it back. That's it, the rest is a cross-platform 
-    // JSON read
-    #endif
 }
 
 std::string MainFrame::SaveInstallInfo() {
-    auto path = std::filesystem::absolute("GeodeInstallationInfo.json");
+    #ifdef _WIN32
+    auto path = ghc::filesystem::absolute("GeodeInstallationInfo.json");
+    #elif defined(__APPLE__)
+    FSRef ref;
+    OSType folderType = kApplicationSupportFolderType;
+    char pth[PATH_MAX];
+
+    FSFindFolder(kUserDomain, folderType, kCreateFolder, &ref);
+    FSRefMakePath(&ref, (UInt8*)&pth, PATH_MAX);
+
+    ghc::filesystem::path path(pth);
+    path = path / "GeodeSDK";
+    if (!ghc::filesystem::exists(path)) {
+        ghc::filesystem::create_directory(path);
+    }
+    path = path / "GeodeInstallationInfo.json";
+    #endif
 
     auto json = nlohmann::json::object();
     try {
@@ -65,6 +98,7 @@ std::string MainFrame::SaveInstallInfo() {
         file << json.dump(4);
     }
 
+    #ifdef _WIN32
     wxRegKey key(wxRegKey::HKLM, "Software\\GeodeSDK");
     if (!key.Create()) {
         return "Unable to create Registry Key - the installer wont be able to uninstall Geode!";
@@ -72,6 +106,7 @@ std::string MainFrame::SaveInstallInfo() {
     if (!key.SetValue("InstallInfo", path.wstring())) {
         return "Unable to save Registry Key - the installer wont be able to uninstall Geode!";
     }
+    #endif
     return "";
 }
 
@@ -86,18 +121,31 @@ void MainFrame::DeleteInstallInfo() {
         m_firstTime = false;
     }
     if (installInfo.size()) {
-        std::filesystem::path path(installInfo);
-        if (std::filesystem::exists(path)) {
-            std::filesystem::remove(path);
+        ghc::filesystem::path path(installInfo);
+        if (ghc::filesystem::exists(path)) {
+            ghc::filesystem::remove(path);
         }
     }
     key.DeleteSelf();
+    #elif __APPLE__
+    FSRef ref;
+    OSType folderType = kApplicationSupportFolderType;
+    char pth[PATH_MAX];
+
+    FSFindFolder(kUserDomain, folderType, kCreateFolder, &ref);
+    FSRefMakePath(&ref, (UInt8*)&pth, PATH_MAX);
+
+    ghc::filesystem::path path(pth);
+    path = path / "GeodeSDK" / "GeodeInstallationInfo.json";
+    if (ghc::filesystem::exists(path)) {
+        ghc::filesystem::remove(path);
+    }
     #else
     static_assert(false, "Implement MainFrame::DeleteInstallInfo!");
     #endif
 }
 
-std::filesystem::path MainFrame::FigureOutGDPath() {
+ghc::filesystem::path MainFrame::FigureOutGDPath() {
     #ifdef _WIN32
     wxRegKey key(wxRegKey::HKLM, "Software\\WOW6432Node\\Valve\\Steam");
     if (key.HasValue("InstallPath")) {
@@ -108,14 +156,14 @@ std::filesystem::path MainFrame::FigureOutGDPath() {
             value.Replace("\\\\", "\\");
         }
 
-        std::filesystem::path firstTest(value.ToStdWstring());
+        ghc::filesystem::path firstTest(value.ToStdWstring());
         firstTest /= "steamapps/common/Geometry Dash/GeometryDash.exe";
 
-        if (std::filesystem::exists(firstTest) && std::filesystem::is_regular_file(firstTest)) {
+        if (ghc::filesystem::exists(firstTest) && ghc::filesystem::is_regular_file(firstTest)) {
             return firstTest.make_preferred();
         }
 
-        std::filesystem::path configPath(value.ToStdWstring());
+        ghc::filesystem::path configPath(value.ToStdWstring());
         configPath /= "config/config.vdf";
 
         std::wifstream config(configPath);
@@ -131,10 +179,10 @@ std::filesystem::path MainFrame::FigureOutGDPath() {
                         val.Replace("\\\\", "\\");
                     }
 
-                    std::filesystem::path test(val.ToStdWstring());
+                    ghc::filesystem::path test(val.ToStdWstring());
                     test /= "steamapps/common/Geometry Dash/GeometryDash.exe";
 
-                    if (std::filesystem::exists(test) && std::filesystem::is_regular_file(test)) {
+                    if (ghc::filesystem::exists(test) && ghc::filesystem::is_regular_file(test)) {
                         return test.make_preferred();
                     }
                 }
@@ -142,6 +190,8 @@ std::filesystem::path MainFrame::FigureOutGDPath() {
         }
     }
     return "";
+    #elif defined(__APPLE__)
+    return figureOutGdPath();
     #else
     static_assert(false, "Implement MainFrame::FigureOutGDPath!");
     // If there's no automatic path figure-outing here, just return ""
@@ -149,36 +199,38 @@ std::filesystem::path MainFrame::FigureOutGDPath() {
 }
 
 OtherModLoaderInfo MainFrame::DetectOtherModLoaders() {
-    #ifdef _WIN32
     OtherModLoaderInfo found;
-    if (std::filesystem::exists(m_installingTo / "absoluteldr.dll")) {
+    #ifdef _WIN32
+    if (ghc::filesystem::exists(m_installingTo / "absoluteldr.dll")) {
         found.m_hasMH = 6;
     }
-    if (std::filesystem::exists(m_installingTo / "hackproldr.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "hackproldr.dll")) {
         found.m_hasMH = 7;
     }
-    if (std::filesystem::exists(m_installingTo / "ToastedMarshmellow.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "ToastedMarshmellow.dll")) {
         found.m_hasGDHM = true;
     }
-    if (std::filesystem::exists(m_installingTo / "Geode.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "Geode.dll")) {
         found.m_hasGeode = true;
     }
-    if (std::filesystem::exists(m_installingTo / "quickldr.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "quickldr.dll")) {
         found.m_others.push_back("QuickLdr");
     }
-    if (std::filesystem::exists(m_installingTo / "GDDLLLoader.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "GDDLLLoader.dll")) {
         found.m_others.push_back("GDDLLLoader");
     }
-    if (std::filesystem::exists(m_installingTo / "ModLdr.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "ModLdr.dll")) {
         found.m_others.push_back("ModLdr");
     }
-    if (std::filesystem::exists(m_installingTo / "minhook.x32.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "minhook.x32.dll")) {
         found.m_hasMoreUnknown = true;
     }
-    if (std::filesystem::exists(m_installingTo / "XInput9_1_0.dll")) {
+    if (ghc::filesystem::exists(m_installingTo / "XInput9_1_0.dll")) {
         found.m_hasMoreUnknown = true;
     }
     return found;
+    #elif defined(__APPLE__)
+    return found; // there are no other conflicts
     #else
     static_assert(false, "Implement MainFrame::DetectOtherModLoaders!");
     // Return a list of known mods if found (if possible, update
@@ -252,6 +304,8 @@ std::string MainFrame::InstallGeode(wxString const& file) {
 
         ix++;
     }
+    #elif defined(__APPLE__)
+    std::cout << "balls.\n";
     #else
     static_assert(false, "Implement installation proper for this platform");
     #endif
@@ -260,17 +314,19 @@ std::string MainFrame::InstallGeode(wxString const& file) {
 
 bool MainFrame::UninstallGeode(Installation const& inst) {
     #ifdef _WIN32
-    std::filesystem::path path(inst.m_path);
-    if (std::filesystem::exists(path / "geode")) {
-        std::filesystem::remove_all(path / "geode");
+    ghc::filesystem::path path(inst.m_path);
+    if (ghc::filesystem::exists(path / "geode")) {
+        ghc::filesystem::remove_all(path / "geode");
     }
-    if (std::filesystem::exists(path / "XInput9_1_0.dll")) {
-        std::filesystem::remove(path / "XInput9_1_0.dll");
+    if (ghc::filesystem::exists(path / "XInput9_1_0.dll")) {
+        ghc::filesystem::remove(path / "XInput9_1_0.dll");
     }
-    if (std::filesystem::exists(path / "Geode.dll")) {
-        std::filesystem::remove(path / "Geode.dll");
+    if (ghc::filesystem::exists(path / "Geode.dll")) {
+        ghc::filesystem::remove(path / "Geode.dll");
     }
     return true;
+    #elif defined(__APPLE__)
+    std::cout << "balls 2\n";
     #else
     #error "Implement MainFrame::UninstallGeode"
     #endif
@@ -278,15 +334,17 @@ bool MainFrame::UninstallGeode(Installation const& inst) {
 
 bool MainFrame::DeleteSaveData(Installation const& inst) {
     #ifdef _WIN32
-    std::filesystem::path path(
+    ghc::filesystem::path path(
         wxStandardPaths::Get().GetUserLocalDataDir().ToStdWstring()
     );
-    path = path.parent_path() / std::filesystem::path(inst.m_exe).replace_extension() / "geode";
-    if (std::filesystem::exists(path)) {
-        std::filesystem::remove_all(path);
+    path = path.parent_path() / ghc::filesystem::path(inst.m_exe).replace_extension() / "geode";
+    if (ghc::filesystem::exists(path)) {
+        ghc::filesystem::remove_all(path);
         return true;
     }
     return false;
+    #elif defined(__APPLE__)
+    std::cout << "cocks\n";
     #else
     #error "Implement MainFrame::DeleteSaveData"
     #endif

@@ -2,7 +2,7 @@
 
 #include "wx.hpp"
 #include <unordered_map>
-#include <filesystem>
+#include "fs/filesystem.hpp"
 #include <set>
 
 enum {
@@ -96,7 +96,7 @@ protected:
     Page* m_current = nullptr;
     wxButton* m_nextBtn;
     wxButton* m_prevBtn;
-    std::filesystem::path m_installingTo;
+    ghc::filesystem::path m_installingTo;
     std::string m_targetExeName;
     int m_uninstallType;
     bool m_deleteSaveData;
@@ -119,10 +119,11 @@ protected:
 
     void UpdateCanContinue();
     void PickPage(int id);
+    void ResizeText(float width);
 
     // platform-specific
 
-    static std::filesystem::path FigureOutGDPath();
+    static ghc::filesystem::path FigureOutGDPath();
     OtherModLoaderInfo DetectOtherModLoaders();
 
     void LoadInstallInfo();

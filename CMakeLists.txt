@@ -28,6 +28,7 @@ find_package(wxWidgets REQUIRED COMPONENTS base core net)
 include(${wxWidgets_USE_FILE})
 
 if (WIN32)
+	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
 	add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
 	
 	add_custom_command(
@@ -37,8 +38,11 @@ if (WIN32)
 		COMMENT "Adding manifest..."
 	)
 else()
-	add_executable(${PROJECT_NAME} ${SOURCES})
+	file(GLOB_RECURSE OBJC_SOURCES
+		src/*.mm
+	)
+
+	add_executable(${PROJECT_NAME} ${SOURCES} ${OBJC_SOURCES})
 endif()
 
-target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
 target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES})
