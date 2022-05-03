@@ -1,2 +1,6 @@
+#pragma once
+
 #include <string>
-std::string figureOutGdPath();
+#include <optional>
+
+std::optional<std::string> FigureOutGDPathObjC();

@@ -81,7 +81,10 @@
         "any": "cpp",
         "numeric": "cpp",
         "valarray": "cpp",
-        "set": "cpp"
+        "set": "cpp",
+        "variant": "cpp",
+        "deque": "cpp",
+        "stack": "cpp"
     }
 }
  

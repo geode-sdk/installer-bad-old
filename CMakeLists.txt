@@ -6,8 +6,8 @@ project(GeodeInstaller VERSION 0.0.1)
 
 file(READ "EULA" GEODE_EULA)
 configure_file(
-	${CMAKE_SOURCE_DIR}/src/eula.hpp.in
-	${CMAKE_SOURCE_DIR}/src/eula.hpp
+	${CMAKE_SOURCE_DIR}/src/include/eula.hpp.in
+	${CMAKE_SOURCE_DIR}/src/include/eula.hpp
 )
 
 configure_file(
@@ -28,8 +28,9 @@ find_package(wxWidgets REQUIRED COMPONENTS base core net)
 include(${wxWidgets_USE_FILE})
 
 if (WIN32)
-	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
 	add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
+	
+	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
 	
 	add_custom_command(
 		TARGET ${PROJECT_NAME}
