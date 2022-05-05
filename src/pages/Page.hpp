@@ -13,11 +13,13 @@ enum class PageID {
 
     InstallGDPSInfo,
     InstallSelectGD,
-    InstallCheckForModLoaders,
+    InstallCheckMods,
     Install,
     InstallFinished,
 
+    DevInstallSelectSDK,
     DevInstall,
+    DevInstallFinished,
 
     UninstallStart,
     UninstallSelect,
@@ -42,24 +44,37 @@ protected:
     virtual void resize();
     virtual void onSelect(wxCommandEvent& e);
 
+    void setText(wxStaticText* text, wxString const& newText);
     wxStaticText* addText(wxString const& text);
     wxTextCtrl* addLongText(wxString const& text);
+    wxGauge* addProgressBar();
     void addSelect(std::initializer_list<wxString> const& select);
-    template<auto Func = nullptr>
-    wxTextCtrl* addInput(wxString const& text) {
+    template<class Class>
+    wxTextCtrl* addInput(wxString const& text, void(Class::*func)(wxCommandEvent&)) {
         auto input = new wxTextCtrl(this, wxID_ANY, text);
         m_sizer->Add(input, 0, wxALL | wxEXPAND, 10);
-        if constexpr (Func != nullptr) {
-            input->Bind(wxEVT_TEXT, Func, this);
+        if (func) {
+            input->Bind(wxEVT_TEXT, func, reinterpret_cast<Class*>(this));
         }
         return input;
     }
-    template<auto Func = nullptr>
-    wxButton* addButton(wxString const& text) {
+    template<class Class>
+    wxButton* addButton(wxString const& text, void(Class::*func)(wxCommandEvent&), Class* ptr = nullptr) {
         auto btn = new wxButton(this, wxID_ANY, text);
         m_sizer->Add(btn, 0, wxALL, 10);
-        if constexpr (Func != nullptr) {
-            btn->Bind(wxEVT_BUTTON, Func, this);
+        if (func) {
+            if (!ptr) ptr = reinterpret_cast<Class*>(this);
+            btn->Bind(wxEVT_BUTTON, func, ptr);
+        }
+        return btn;
+    }
+    template<class Class>
+    wxCheckBox* addToggle(wxString const& text, void(Class::*func)(wxCommandEvent&), Class* ptr = nullptr) {
+        auto btn = new wxCheckBox(this, wxID_ANY, text);
+        m_sizer->Add(btn, 0, wxALL, 10);
+        if (func) {
+            if (!ptr) ptr = reinterpret_cast<Class*>(this);
+            btn->Bind(wxEVT_CHECKBOX, func, ptr);
         }
         return btn;
     }
@@ -86,3 +101,4 @@ struct RegisterPage {
     }
 };
 #define REGISTER_PAGE(pg) static RegisterPage<PageID::pg, Page##pg> reg##pg;
+#define GET_EARLIER_PAGE(pg) Page::get<Page##pg>(PageID::pg, m_frame)

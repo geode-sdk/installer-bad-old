@@ -6,7 +6,7 @@
 #include <set>
 #include "pages/Page.hpp"
 
-enum class InstallerType {
+enum class InstallType {
     Install,
     InstallOnGDPS,
     InstallDevTools,
@@ -37,7 +37,6 @@ protected:
     void onNext(wxCommandEvent&);
     void onPrev(wxCommandEvent&);
     void onQuit(wxCommandEvent&);
-    void onDiscord(wxCommandEvent&);
 
     friend class Page;
 
@@ -49,5 +48,7 @@ public:
     void prevPage();
 
     void updateControls();
-    void selectPageStructure(InstallerType type);
+    void selectPageStructure(InstallType type);
+    
+    void onDiscord(wxCommandEvent&);
 };

@@ -21,6 +21,14 @@ void Page::resize() {
 }
 void Page::onSelect(wxCommandEvent&) {}
 
+void Page::setText(wxStaticText* text, wxString const& newText) {
+    m_labels[text] = newText;
+    m_frame->Layout();
+    this->resize();
+    this->Update();
+    m_frame->Layout();
+}
+
 wxStaticText* Page::addText(wxString const& text) {
     auto label = new wxStaticText(this, wxID_ANY, text);
     m_sizer->Add(label, 0, wxALL | wxEXPAND, 10);
@@ -36,6 +44,12 @@ wxTextCtrl* Page::addLongText(wxString const& text) {
     );
     m_sizer->Add(ctrl, 1, wxALL | wxEXPAND, 10);
     return ctrl;
+}
+
+wxGauge* Page::addProgressBar() {
+    auto bar = new wxGauge(this, wxID_ANY, 100);
+    m_sizer->Add(bar, 0, wxALL | wxEXPAND, 10);
+    return bar;
 }
 
 void Page::addSelect(std::initializer_list<wxString> const& select) {

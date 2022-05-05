@@ -93,6 +93,11 @@ void MainFrame::goToPage(PageID id) {
         
         this->updateControls();
 
+        // for some reason this needs to be done 
+        // to make sure labels wrap properly
+        this->Layout();
+        m_current->resize();
+        m_current->Update();
         this->Layout();
     } else if (id != PageID::NotFound) {
         this->goToPage(PageID::NotFound);
@@ -142,36 +147,39 @@ void MainFrame::updateControls() {
     );
 }
 
-void MainFrame::selectPageStructure(InstallerType type) {
+void MainFrame::selectPageStructure(InstallType type) {
     switch (type) {
-        case InstallerType::Install: {
+        case InstallType::Install: {
             m_structure = {
                 PageID::EULA,
                 PageID::InstallSelectGD,
-                PageID::InstallCheckForModLoaders,
+                PageID::InstallCheckMods,
                 PageID::Install,
                 PageID::InstallFinished,
             };
         } break;
 
-        case InstallerType::InstallOnGDPS: {
+        case InstallType::InstallOnGDPS: {
             m_structure = {
                 PageID::InstallGDPSInfo,
                 PageID::EULA,
                 PageID::InstallSelectGD,
-                PageID::InstallCheckForModLoaders,
+                PageID::InstallCheckMods,
                 PageID::Install,
                 PageID::InstallFinished,
             };
         } break;
 
-        case InstallerType::InstallDevTools: {
+        case InstallType::InstallDevTools: {
             m_structure = {
+                PageID::EULA,
+                PageID::DevInstallSelectSDK,
                 PageID::DevInstall,
+                PageID::DevInstallFinished,
             };
         } break;
 
-        case InstallerType::Uninstall: {
+        case InstallType::Uninstall: {
             m_structure = {
                 PageID::UninstallStart,
                 PageID::UninstallSelect,
@@ -241,8 +249,13 @@ MainFrame::MainFrame() : wxFrame(
 
     mainSizer->Add(bottomControls, 0, wxALL | wxEXPAND, 0);
 
-    this->selectPageStructure(InstallerType::Install);
-    m_startPage = Manager::get()->isFirstTime() ? PageID::FirstStart : PageID::Start;
+    if (Manager::get()->isFirstTime()) {
+        this->selectPageStructure(InstallType::Install);
+        m_startPage = PageID::FirstStart;
+    } else {
+        this->selectPageStructure(InstallType::InstallOnGDPS);
+        m_startPage = PageID::Start;
+    }
 
     this->SetSizer(mainSizer);
     this->SetMinSize({330, 285});

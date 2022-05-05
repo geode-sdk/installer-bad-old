@@ -14,7 +14,7 @@
 #include <wx/msw/registry.h>
 
 #define REGKEY_GEODE "Software\\GeodeSDK"
-#define REGVAL_INSTALLDIR "InstallDirectory"
+#define REGVAL_INSTALLDIR "InstallInfo"
 
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
@@ -103,207 +103,21 @@ void Manager::webRequest(
     request.Start();
 }
 
-void Manager::downloadLoader(
-    DownloadErrorFunc errorFunc,
-    DownloadProgressFunc progressFunc,
-    DownloadFinishFunc finishFunc
+Result<> Manager::unzipTo(
+    ghc::filesystem::path const& zipLocation,
+    ghc::filesystem::path const& targetLocation
 ) {
-    this->webRequest(
-        "https://api.github.com/repos/geode-sdk/loader/releases/latest",
-        false,
-        errorFunc,
-        nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
-            try {
-                auto json = nlohmann::json::parse(res.AsString());
-
-                auto tagName = json["tag_name"].get<std::string>();
-                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
-
-                for (auto& asset : json["assets"]) {
-                    auto name = asset["name"].get<std::string>();
-                    if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
-                        this->webRequest(
-                            asset["browser_download_url"].get<std::string>(),
-                            true,
-                            errorFunc,
-                            progressFunc,
-                            finishFunc
-                        );
-                    }
-                }
-                if (errorFunc) {
-                    errorFunc("No release asset for " PLATFORM_NAME " found");
-                }
-            } catch(std::exception& e) {
-                if (errorFunc) {
-                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
-                }
-            }
-        }
-    );
-}
-
-
-ghc::filesystem::path const& Manager::getGeodeDirectory() const {
-    return m_geodeDirectory;
-}
-
-std::set<Installation> const& Manager::getInstallations() const {
-    return m_installations;
-}
-
-bool Manager::isFirstTime() const {
-    return !m_geodeDirectorySet;
-}
-
-
-Result<> Manager::loadData() {
-    #ifdef _WIN32
-
-    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (key.HasValue(REGVAL_INSTALLDIR)) {
-        wxString value;
-        key.QueryValue(REGVAL_INSTALLDIR, value);
-        m_geodeDirectory = value.ToStdWstring();
-        m_geodeDirectorySet = true;
-    } else {
-        TCHAR pf[MAX_PATH];
-        SHGetSpecialFolderPath(
-            nullptr,
-            pf,
-            CSIDL_PROGRAM_FILES,
-            false
-        );
-        m_geodeDirectory = ghc::filesystem::path(pf) / "GeodeSDK";
-        m_geodeDirectorySet = false;
-    }
-
-    #elif defined(__APPLE__)
-
-    FSRef ref;
-    OSType folderType = kApplicationSupportFolderType;
-    char path[PATH_MAX];
-
-    FSFindFolder(kUserDomain, folderType, kCreateFolder, &ref);
-    FSRefMakePath(&ref, (UInt8*)&path, PATH_MAX);
-
-    ghc::filesystem::path parent(path);
-    parent = parent / "GeodeSDK";
-    std::string geodeDirectory = "";
-    if (ghc::filesystem::exists(parent)) {
-        m_geodeDirectorySet = true;
-        m_geodeDirectory = parent;
-    }
-
-    #else
-    static_assert(false, "Implement Manager::LoadData!");
-    // get Geode dir location or set default
-    #endif
-
-    auto installJsonPath = m_geodeDirectory / INSTALL_DATA_JSON;
-    if (ghc::filesystem::exists(installJsonPath)) {
-        std::ifstream file(installJsonPath);
-        if (!file.is_open()) return Err("Unable to save installation info");
-        std::string data(std::istreambuf_iterator<char>{file}, {});
-        try {
-            auto json = nlohmann::json::parse(data);
-            for (auto& i : json["installations"]) {
-                m_installations.insert({
-                    i["path"].get<std::string>(),
-                    i["exe"].get<std::string>()
-                });
-            }
-        } catch(std::exception& e) {
-            return Err("Unable to load installation info: " + std::string(e.what()));
-        }
-    }
-    
-    return Ok();
-}
-
-Result<> Manager::saveData() {
-    ghc::filesystem::path installJsonPath = m_geodeDirectory / INSTALL_DATA_JSON;
-
-    auto json = nlohmann::json::object();
-    try {
-        json["installations"] = nlohmann::json::array();
-        for (auto& i : m_installations) {
-            auto obj = nlohmann::json::object();
-            obj["path"] = i.m_path.string();
-            obj["exe"] = i.m_exe.ToStdString();
-            json["installations"].push_back(obj);
-        }
-    } catch(...) {}
-
-    {
-        std::wofstream file(installJsonPath);
-        if (!file.is_open()) return Err(
-            "Unable to save installation data - "
-            "the installer will be unable to uninstall Geode!"
-        );
-        file << json.dump(4);
-    }
-
-    #ifdef _WIN32
-    wxRegKey key(wxRegKey::HKLM, "Software\\GeodeSDK");
-    if (!key.Create()) {
-        return Err(
-            "Unable to create Registry Key - "
-            "the installer wont be able to uninstall Geode!"
-        );
-    }
-    if (!key.SetValue("InstallInfo", installJsonPath.wstring())) {
-        return Err(
-            "Unable to save Registry Key - "
-            "the installer wont be able to uninstall Geode!"
-        );
-    }
-    #endif
-
-    return Ok();
-}
-
-Result<> Manager::deleteData() {
-    #ifdef _WIN32
-    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (!key.DeleteSelf()) {
-        return Err("Unable to delete registry key");
-    }
-    #endif
-
-    if (ghc::filesystem::exists(m_geodeDirectory)) {
-        if (!ghc::filesystem::remove_all(m_geodeDirectory)) {
-            return Err("Unable to delete Geode directory");
-        }
-    }
-    return Ok();
-}
-
-
-Result<> Manager::installFor(
-    ghc::filesystem::path const& gdExePath,
-    ghc::filesystem::path const& zipLocation
-) {
-    #ifdef _WIN32
-
-    Installation inst;
-    inst.m_exe = gdExePath.filename().wstring();
-    inst.m_path = gdExePath.parent_path();
-
     wxFileInputStream fis(zipLocation.wstring());
     if (!fis.IsOk()) {
-        return Err("Unable to open loader zip");
+        return Err("Unable to open zip");
     }
     wxZipInputStream zip(fis);
     if (!zip.IsOk()) {
-        return Err("Unable to read loader zip");
+        return Err("Unable to read zip");
     }
-    m_installations.insert(inst);
     std::unique_ptr<wxZipEntry> entry;
-    int ix = 1;
     while (entry.reset(zip.GetNextEntry()), entry) {
-        auto path = inst.m_path / entry->GetName().ToStdWstring();
+        auto path = targetLocation / entry->GetName().ToStdWstring();
         wxFileName fn;
 
         if (entry->IsDir()) {
@@ -332,16 +146,335 @@ Result<> Manager::installFor(
         }
 
         zip.Read(out);
+    }
+    return Ok();
+}
 
-        ix++;
+void Manager::downloadLoader(
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    DownloadFinishFunc finishFunc
+) {
+    this->webRequest(
+        "https://api.github.com/repos/geode-sdk/loader/releases/latest",
+        false,
+        errorFunc,
+        nullptr,
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+            try {
+                auto json = nlohmann::json::parse(res.AsString());
+
+                auto tagName = json["tag_name"].get<std::string>();
+                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
+
+                for (auto& asset : json["assets"]) {
+                    auto name = asset["name"].get<std::string>();
+                    if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
+                        return this->webRequest(
+                            asset["browser_download_url"].get<std::string>(),
+                            true,
+                            errorFunc,
+                            progressFunc,
+                            finishFunc
+                        );
+                    }
+                }
+                if (errorFunc) {
+                    errorFunc("No release asset for " PLATFORM_NAME " found");
+                }
+            } catch(std::exception& e) {
+                if (errorFunc) {
+                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
+                }
+            }
+        }
+    );
+}
+
+void Manager::downloadAPI(
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    DownloadFinishFunc finishFunc
+) {
+    this->webRequest(
+        "https://api.github.com/repos/geode-sdk/api/releases/latest",
+        false,
+        errorFunc,
+        nullptr,
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+            try {
+                auto json = nlohmann::json::parse(res.AsString());
+
+                auto tagName = json["tag_name"].get<std::string>();
+                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
+
+                for (auto& asset : json["assets"]) {
+                    auto name = asset["name"].get<std::string>();
+                    if (name.find(".geode") != std::string::npos) {
+                        return this->webRequest(
+                            asset["browser_download_url"].get<std::string>(),
+                            true,
+                            errorFunc,
+                            progressFunc,
+                            finishFunc
+                        );
+                    }
+                }
+                if (errorFunc) {
+                    errorFunc("No .geode file release asset found");
+                }
+            } catch(std::exception& e) {
+                if (errorFunc) {
+                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
+                }
+            }
+        }
+    );
+}
+
+
+ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
+    #ifdef _WIN32
+
+    TCHAR pf[MAX_PATH];
+    SHGetSpecialFolderPath(
+        nullptr,
+        pf,
+        CSIDL_PROGRAM_FILES,
+        false
+    );
+    return ghc::filesystem::path(pf) / "GeodeSDK";
+    
+    #elif defined(__APPLE__)
+
+    FSRef ref;
+    OSType folderType = kApplicationSupportFolderType;
+    char path[PATH_MAX];
+
+    FSFindFolder(kUserDomain, folderType, kCreateFolder, &ref);
+    FSRefMakePath(&ref, (UInt8*)&path, PATH_MAX);
+
+    return ghc::filesystem::path(path) / "GeodeSDK";
+
+    #else
+    #error "Implement Manager::getDefaultGeodeDirectory"
+    #endif
+}
+
+ghc::filesystem::path Manager::getDefaultDataDirectory() const {
+    #ifdef _WIN32
+
+    return ghc::filesystem::path(
+        wxStandardPaths::Get().GetUserLocalDataDir().ToStdWstring()
+    ).parent_path() / "GeodeSDK";
+
+    #elif defined(__APPLE__)
+    return this->getDefaultSDKDirectory();
+    #else
+    #error "Implement Manager::getDefaultDataDirectory"
+    #endif
+}
+
+ghc::filesystem::path const& Manager::getSDKDirectory() const {
+    return m_sdkDirectory;
+}
+
+void Manager::setSDKDirectory(ghc::filesystem::path const& path) {
+    m_sdkDirectory = path;
+}
+
+ghc::filesystem::path const& Manager::getDataDirectory() const {
+    return m_dataDirectory;
+}
+
+std::set<Installation> const& Manager::getInstallations() const {
+    return m_installations;
+}
+
+bool Manager::isFirstTime() const {
+    return !m_dataLoaded;
+}
+
+
+Result<> Manager::loadData() {
+    m_dataDirectory = this->getDefaultDataDirectory();
+    m_sdkDirectory = this->getDefaultSDKDirectory();
+
+    #ifdef _WIN32
+
+    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
+    if (key.HasValue(REGVAL_INSTALLDIR)) {
+        wxString value;
+        key.QueryValue(REGVAL_INSTALLDIR, value);
+        m_dataDirectory = value.ToStdWstring();
+        m_dataLoaded = true;
     }
 
     #elif defined(__APPLE__)
-    std::cout << "balls.\n";
+
+    m_dataLoaded = true;
+
+    #else
+    static_assert(false, "Implement Manager::LoadData!");
+    // get Geode dir location or set default
+    #endif
+
+    auto installJsonPath = m_dataDirectory / INSTALL_DATA_JSON;
+    if (ghc::filesystem::exists(installJsonPath)) {
+        std::ifstream file(installJsonPath);
+        if (!file.is_open()) return Err("Unable to load installation info");
+        std::string data(std::istreambuf_iterator<char>{file}, {});
+        try {
+            auto json = nlohmann::json::parse(data);
+            if (json.contains("sdk") && !json["sdk"].is_null()) {
+                m_sdkDirectory = json["sdk"].get<std::string>();
+                m_sdkInstalled = true;
+            }
+            for (auto& i : json["installations"]) {
+                m_installations.insert({
+                    i["path"].get<std::string>(),
+                    i["exe"].get<std::string>()
+                });
+            }
+        } catch(std::exception& e) {
+            return Err("Unable to load installation info: " + std::string(e.what()));
+        }
+    }
+    
+    return Ok();
+}
+
+Result<> Manager::saveData() {
+    ghc::filesystem::path installJsonPath = m_dataDirectory / INSTALL_DATA_JSON;
+
+    if (
+        !ghc::filesystem::exists(m_dataDirectory) &&
+        !ghc::filesystem::create_directories(m_dataDirectory)
+    ) {
+        return Err("Unable to create GeodeSDK directory at " + m_dataDirectory.string());
+    }
+
+    auto json = nlohmann::json::object();
+    try {
+        if (m_sdkInstalled) {
+            json["sdk"] = m_sdkDirectory.string();
+        }
+        json["installations"] = nlohmann::json::array();
+        for (auto& i : m_installations) {
+            auto obj = nlohmann::json::object();
+            obj["path"] = i.m_path.string();
+            obj["exe"] = i.m_exe.ToStdString();
+            json["installations"].push_back(obj);
+        }
+    } catch(...) {}
+
+    {
+        std::wofstream file(installJsonPath);
+        if (!file.is_open()) return Err(
+            "Can't save file at " + installJsonPath.string()
+        );
+        file << json.dump(4);
+    }
+
+    #ifdef _WIN32
+    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
+    if (!key.Create()) {
+        return Err(
+            "Unable to create Registry Key - "
+            "the installer wont be able to uninstall Geode!"
+        );
+    }
+    if (!key.SetValue(REGVAL_INSTALLDIR, m_dataDirectory.wstring())) {
+        return Err(
+            "Unable to save Registry Key - "
+            "the installer wont be able to uninstall Geode!"
+        );
+    }
+    #endif
+
+    return Ok();
+}
+
+Result<> Manager::deleteData() {
+    #ifdef _WIN32
+    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
+    if (!key.DeleteSelf()) {
+        return Err("Unable to delete registry key");
+    }
+    #endif
+
+    if (ghc::filesystem::exists(m_dataDirectory)) {
+        if (!ghc::filesystem::remove_all(m_dataDirectory)) {
+            return Err("Unable to delete Geode directory");
+        }
+    }
+    return Ok();
+}
+
+
+bool Manager::isSDKInstalled() const {
+    return m_sdkInstalled;
+}
+
+Result<> Manager::uninstallSDK() {
+    if (ghc::filesystem::exists(m_sdkDirectory)) {
+        if (!ghc::filesystem::remove_all(m_sdkDirectory)) {
+            return Err("Unable to delete Geode directory");
+        }
+    }
+    return Ok();
+}
+
+
+Result<Installation> Manager::installLoaderFor(
+    ghc::filesystem::path const& gdExePath,
+    ghc::filesystem::path const& zipLocation
+) {
+    Installation inst;
+    inst.m_exe = gdExePath.filename().wstring();
+    inst.m_path = gdExePath.parent_path();
+
+    #ifdef _WIN32
+
+    auto ures = this->unzipTo(zipLocation, inst.m_path);
+    if (!ures) {
+        return Err("Loader unzip error: " + ures.error());
+    }
+
+    #elif defined(__APPLE__)
+    #error "Do you just unzip the Geode dylib to the GD folder on mac? or where do you put it"
     #else
     static_assert(false, "Implement installation proper for this platform");
     #endif
 
+    m_installations.insert(inst);
+
+    return Ok(inst);
+}
+
+Result<> Manager::installAPIFor(
+    Installation const& inst,
+    ghc::filesystem::path const& zipLocation,
+    wxString const& filename
+) {
+    auto targetDir = inst.m_path / "geode" / "mods";
+    if (
+        !ghc::filesystem::exists(targetDir) &&
+        !ghc::filesystem::create_directories(targetDir)
+    ) {
+        return Err("Unable to create Geode mods directory under " + targetDir.string());
+    }
+    try {
+        if (!ghc::filesystem::copy_file(
+            zipLocation,
+            targetDir / filename.ToStdWstring(),
+            ghc::filesystem::copy_options::overwrite_existing
+        )) {
+            return Err("Unable to copy Geode API");
+        }
+    } catch(std::exception& e) {
+        return Err("Unable to copy Geode API: " + std::string(e.what()));
+    }
     return Ok();
 }
 
