@@ -3,16 +3,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED On)
 
 project(GeodeInstaller VERSION 0.0.1)
+set(PROJECT_VERSION_COMMA 0,0,1)
 
 file(READ "EULA" GEODE_EULA)
 configure_file(
 	${CMAKE_SOURCE_DIR}/src/include/eula.hpp.in
 	${CMAKE_SOURCE_DIR}/src/include/eula.hpp
-)
-
-configure_file(
-    ${CMAKE_SOURCE_DIR}/${PROJECT_NAME}.exe.manifest.in
-    ${CMAKE_SOURCE_DIR}/${PROJECT_NAME}.exe.manifest
 )
 
 file(GLOB_RECURSE SOURCES
@@ -28,6 +24,11 @@ find_package(wxWidgets REQUIRED COMPONENTS base core net)
 include(${wxWidgets_USE_FILE})
 
 if (WIN32)
+	configure_file(
+		${CMAKE_SOURCE_DIR}/${PROJECT_NAME}.exe.manifest.in
+		${PROJECT_NAME}.exe.manifest
+	)
+
 	add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
 	
 	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
@@ -35,7 +36,7 @@ if (WIN32)
 	add_custom_command(
 		TARGET ${PROJECT_NAME}
 		POST_BUILD
-		COMMAND "mt.exe" -manifest \"${CMAKE_SOURCE_DIR}\\${PROJECT_NAME}.exe.manifest\" -outputresource:"$<TARGET_FILE:${PROJECT_NAME}>"\;\#1
+		COMMAND "mt.exe" -manifest \"${CMAKE_CURRENT_BINARY_DIR}\\${PROJECT_NAME}.exe.manifest\" -outputresource:"$<TARGET_FILE:${PROJECT_NAME}>"\;\#1
 		COMMENT "Adding manifest..."
 	)
 else()
