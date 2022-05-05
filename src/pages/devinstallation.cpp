@@ -4,6 +4,7 @@
 
 class PageDevInstallSelectSDK : public Page {
 protected:
+    wxStaticText* m_info;
     wxTextCtrl* m_pathInput;
     ghc::filesystem::path m_path;
     
@@ -37,6 +38,7 @@ protected:
         m_canContinue =
             !ghc::filesystem::exists(path) ||
             (ghc::filesystem::is_directory(path) && ghc::filesystem::is_empty(path));
+        m_info->Show(!m_canContinue);
         m_frame->updateControls();
     }
 
@@ -50,6 +52,12 @@ public:
         );
 
         this->addButton("Browse", &PageDevInstallSelectSDK::onBrowse);
+
+        m_info = this->addText(
+            "Please select a path to a folder that doesn't "
+            "exist yet or which is empty."
+        );
+        this->updateContinue();
     }
 
     ghc::filesystem::path getPath() const { return m_path; }
@@ -97,15 +105,13 @@ REGISTER_PAGE(DevInstallBranch);
 class PageDevInstall : public Page {
 protected:
     wxStaticText* m_status;
-    wxStaticText* m_gitStatus;
     wxGauge* m_gauge;
 
     void enter() override {
-        Manager::get()->installSDK(
-            GET_EARLIER_PAGE(DevInstallBranch)->getBranch(),
+        Manager::get()->downloadCLI(
             [this](std::string const& str) -> void {
                 wxMessageBox(
-                    "Error downloading the Geode SDK: " + str + 
+                    "Error downloading the Geode CLI: " + str + 
                     ". Try again, and if the problem persists, contact "
                     "the Geode Development team for more help.",
                     "Error Installing",
@@ -114,11 +120,46 @@ protected:
                 this->setText(m_status, "Error: " + str);
             },
             [this](std::string const& text, int prog) -> void {
-                m_gauge->SetValue(prog / 2);
-                this->setText(m_status, "Downloading SDK: " + text);
+                this->setText(m_status, "Downloading Geode CLI: " + text);
+                m_gauge->SetValue(prog);
             },
-            [this]() -> void {
-                m_frame->nextPage();
+            [this](wxWebResponse const& wres) -> void {
+                auto installRes = Manager::get()->installCLI(
+                    wres.GetDataFile().ToStdWstring()
+                );
+                if (!installRes) {
+                    wxMessageBox(
+                        "Error installing Geode CLI: " + installRes.error() + ". Try "
+                        "again, and if the problem persists, contact "
+                        "the Geode Development team for more help.",
+                        "Error Installing",
+                        wxICON_ERROR
+                    );
+                } else {
+                    auto res = Manager::get()->installSDK(
+                        GET_EARLIER_PAGE(DevInstallBranch)->getBranch(),
+                        [this](std::string const& err) -> void {
+                            wxMessageBox(
+                                "Error installing the Geode SDK: " + err + 
+                                ". Try again, and if the problem persists, contact "
+                                "the Geode Development team for more help.",
+                                "Error Installing",
+                                wxICON_ERROR
+                            );
+                            this->setText(m_status, "Error: " + err);
+                        },
+                        [this](std::string const& text, int prog) -> void {
+                            m_gauge->SetValue(prog);
+                            this->setText(m_status, "Cloning SDK: " + text);
+                        },
+                        [this]() -> void {
+                            m_frame->nextPage();
+                        }
+                    );
+                    if (!res) {
+                        wxMessageBox("Error installing SDK: " + res.error());
+                    }
+                }
             }
         );
     }
@@ -129,7 +170,12 @@ public:
 
         m_status = this->addText("Connecting..."); 
         m_gauge = this->addProgressBar();
-        m_gitStatus = this->addText(""); 
+        this->addText(
+            "Installing may take a while; please do not "
+            "close the installer. The progress bar may "
+            "also start from 0 again a few times while "
+            "the installer is cloning submodules."
+        ); 
 
         m_canContinue = false;
         m_canGoBack = false;
@@ -141,6 +187,18 @@ REGISTER_PAGE(DevInstall);
 
 class PageDevInstallFinished : public Page {
 protected:
+    void enter() override {
+        auto res = Manager::get()->saveData();
+        if (!res) {
+            wxMessageBox(
+                "Unable to save installer data: " + res.error() + " - "
+                "the installer will be unable to uninstall Geode!",
+                "Error Saving",
+                wxICON_ERROR
+            );
+        }
+    }
+
     void onDocs(wxCommandEvent&) {
         wxLaunchDefaultBrowser("https://geode-sdk.github.io/docs");
     }
@@ -153,6 +211,7 @@ public:
         );
         this->addText("Check Documentation for help using the SDK.");
         this->addButton("Docs", &PageDevInstallFinished::onDocs);
+        this->addButton("Support Discord Server", &MainFrame::onDiscord, m_frame);
         m_canContinue = true;
         m_canGoBack = false;
     }

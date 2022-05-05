@@ -52,6 +52,21 @@ using DownloadProgressFunc = std::function<void(std::string const&, int)>;
 using DownloadFinishFunc = std::function<void(wxWebResponse const&)>;
 using CloneFinishFunc = std::function<void()>;
 
+class CallOnMainEvent : public wxEvent {
+protected:
+    std::function<void()> m_function;
+
+public:
+    inline CallOnMainEvent(std::function<void()> func, wxEventType type, int winid)
+      : wxEvent(winid, type), m_function(func) {}
+    
+    inline void invoke() {
+        m_function();
+    }
+
+    wxEvent* Clone() const override { return new CallOnMainEvent(*this); }
+};
+
 class Manager : public wxEvtHandler {
 protected:
     ghc::filesystem::path m_sdkDirectory;
@@ -70,6 +85,9 @@ protected:
         ghc::filesystem::path const& zip,
         ghc::filesystem::path const& to
     );
+ 
+    void onSyncThreadCall(CallOnMainEvent&);
+    Result<> finishSDKInstallation();
 
 public:
     static Manager* get();
@@ -88,6 +106,9 @@ public:
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
         DownloadFinishFunc finishFunc
+    );
+    Result<> installCLI(
+        ghc::filesystem::path const& cliZipPath
     );
     Result<> installSDK(
         DevBranch branch, 

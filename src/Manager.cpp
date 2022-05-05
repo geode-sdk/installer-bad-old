@@ -5,6 +5,8 @@
 #include <wx/wfstream.h>
 #include <wx/stdpaths.h>
 #include "include/json.hpp"
+#include <thread>
+#include <chrono>
 
 #define INSTALL_DATA_JSON "installer.json"
 
@@ -18,6 +20,8 @@
 #define REGVAL_SDKDIR "SDKDirectory"
 #define REGVAL_INSTPATH "Path"
 #define REGVAL_INSTEXE "Exe"
+
+#define ENVVAR_SDK "GEODE_SUITE"
 
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
@@ -33,11 +37,42 @@
 #error "Define PLATFORM_ASSET_IDENTIFIER & PLATFORM_NAME"
 #endif
 
+wxDEFINE_EVENT(CALL_ON_MAIN, CallOnMainEvent);
+
 Manager* Manager::get() {
     static auto m = new Manager;
     return m;
 }
 
+void Manager::onSyncThreadCall(CallOnMainEvent& e) {
+    e.invoke();
+}
+
+
+Result<> Manager::finishSDKInstallation() {
+    m_sdkInstalled = true;
+
+    #ifdef _WIN32
+
+    wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
+    if (!key.SetValue(ENVVAR_SDK, m_sdkDirectory.wstring())) {
+        return Err("Unable to set " ENVVAR_SDK " environment variable");
+    }
+    SendMessageTimeout(
+        HWND_BROADCAST,
+        WM_SETTINGCHANGE,
+        0,
+        reinterpret_cast<LPARAM>(L"Environment"),
+        SMTO_ABORTIFHUNG,
+        5000,
+        nullptr
+    );
+    return Ok();
+
+    #else
+    #error "Implement Manager::finishSDKInstallation"
+    #endif
+}
 
 void Manager::webRequest(
     std::string const& url,
@@ -235,6 +270,47 @@ void Manager::downloadAPI(
     );
 }
 
+void Manager::downloadCLI(
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    DownloadFinishFunc finishFunc
+) {
+    this->webRequest(
+        "https://api.github.com/repos/geode-sdk/cli/releases/latest",
+        false,
+        errorFunc,
+        nullptr,
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+            try {
+                auto json = nlohmann::json::parse(res.AsString());
+
+                auto tagName = json["tag_name"].get<std::string>();
+                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
+
+                for (auto& asset : json["assets"]) {
+                    auto name = asset["name"].get<std::string>();
+                    if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
+                        return this->webRequest(
+                            asset["browser_download_url"].get<std::string>(),
+                            true,
+                            errorFunc,
+                            progressFunc,
+                            finishFunc
+                        );
+                    }
+                }
+                if (errorFunc) {
+                    errorFunc("No release asset for " PLATFORM_NAME " found");
+                }
+            } catch(std::exception& e) {
+                if (errorFunc) {
+                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
+                }
+            }
+        }
+    );
+}
+
 
 ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
     #ifdef _WIN32
@@ -386,13 +462,110 @@ Result<> Manager::deleteData() {
 }
 
 
+Result<> Manager::installCLI(
+    ghc::filesystem::path const& cliZipPath
+) {
+    auto targetDir = m_sdkDirectory / "bin";
+    if (
+        !ghc::filesystem::exists(targetDir) &&
+        !ghc::filesystem::create_directories(targetDir)
+    ) {
+        return Err("Unable to create directory " + targetDir.string());
+    }
+    return this->unzipTo(cliZipPath, targetDir);
+}
+
 Result<> Manager::installSDK(
     DevBranch branch,
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
     CloneFinishFunc finishFunc
 ) {
+    #ifdef _WIN32
+
+    if (!ghc::filesystem::exists(m_sdkDirectory / "bin" / "geodeutils.dll")) {
+        return Err("Geode CLI seems to not have been installed!");
+    }
+
+    this->Bind(CALL_ON_MAIN, &Manager::onSyncThreadCall, this);
+
+    std::thread t([this, branch, errorFunc, progressFunc, finishFunc]() -> void {
+        auto throwError = [errorFunc, this](std::string const& msg) -> void {
+            wxQueueEvent(this, new CallOnMainEvent(
+                [errorFunc, msg]() -> void {
+                    if (errorFunc) errorFunc(msg);
+                },
+                CALL_ON_MAIN,
+                wxID_ANY
+            ));
+        };
+
+        auto suiteDir = m_sdkDirectory / "suite";
+
+        using SuiteProgressCallback = void(__stdcall*)(const char*, int);
+        using geode_install_suite = const char*(__cdecl*)(const char*, bool, SuiteProgressCallback);
+
+        auto lib = LoadLibraryW((m_sdkDirectory / "bin" / "geodeutils.dll").wstring().c_str());
+        if (!lib) {
+            throwError("Unable to load library");
+            return;
+        }
+
+        auto installSuite = reinterpret_cast<geode_install_suite>(GetProcAddress(lib, "geode_install_suite"));
+        if (!installSuite) {
+            throwError("Unable to locate suite installing function");
+            return;
+        }
+
+        if (
+            !ghc::filesystem::exists(suiteDir) &&
+            !ghc::filesystem::create_directories(suiteDir)
+        ) {
+            throwError("Unable to create directory at " + suiteDir.string());
+            return;
+        }
+
+        static DownloadProgressFunc progFunc;
+        progFunc = progressFunc;
+
+        auto res = installSuite(
+            suiteDir.string().c_str(),
+            branch == DevBranch::Nightly,
+            [](const char* status, int per) -> void {
+                // limit window update rate
+                static auto time = std::chrono::high_resolution_clock::now();
+                auto now = std::chrono::high_resolution_clock::now();
+                if (std::chrono::duration_cast<std::chrono::milliseconds>(now - time).count() > 300) {
+                    wxQueueEvent(Manager::get(), new CallOnMainEvent(
+                        [status, per]() -> void {
+                            if (progFunc) progFunc(status, per);
+                        },
+                        CALL_ON_MAIN,
+                        wxID_ANY
+                    ));
+                    time = now;
+                }
+            }
+        );
+        if (res) {
+            throwError(res);
+        } else {
+            wxQueueEvent(Manager::get(), new CallOnMainEvent(
+                [this, finishFunc]() -> void {
+                    this->finishSDKInstallation();
+                    if (finishFunc) finishFunc();
+                },
+                CALL_ON_MAIN,
+                wxID_ANY
+            ));
+        }
+    });
+    t.detach();
     return Ok();
+
+    #else
+    #error "Implement Manager::installSDK"
+    #endif
 }
 
 bool Manager::isSDKInstalled() const {
@@ -400,11 +573,29 @@ bool Manager::isSDKInstalled() const {
 }
 
 Result<> Manager::uninstallSDK() {
-    if (ghc::filesystem::exists(m_sdkDirectory)) {
-        if (!ghc::filesystem::remove_all(m_sdkDirectory)) {
-            return Err("Unable to delete Geode directory");
-        }
+    if (
+        ghc::filesystem::exists(m_sdkDirectory) &&
+        !ghc::filesystem::remove_all(m_sdkDirectory)
+    ) {
+        return Err("Unable to delete the GeodeSDK directory");
     }
+    #ifdef _WIN32
+    wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
+    if (!key.DeleteValue(ENVVAR_SDK)) {
+        return Err("Unable to delete " ENVVAR_SDK " environment variable");
+    }
+    SendMessageTimeout(
+        HWND_BROADCAST,
+        WM_SETTINGCHANGE,
+        0,
+        reinterpret_cast<LPARAM>(L"Environment"),
+        SMTO_ABORTIFHUNG,
+        5000,
+        nullptr
+    );
+    #else
+    #error "Implement Manager::uninstallSDK"
+    #endif
     return Ok();
 }
 
@@ -556,10 +747,8 @@ std::optional<ghc::filesystem::path> Manager::findDefaultGDPath() const {
     return figureOutGdPath();
 
     #else
-    
-    static_assert(false, "Implement Manager::FindDefaultGDPath!");
+    #error "Implement Manager::FindDefaultGDPath!"
     // If there's no automatic path figure-outing here, just return ""
-    
     #endif
 }
 
@@ -596,7 +785,7 @@ int Manager::doesDirectoryContainOtherMods(
     return flags; // there are no other conflicts
 
     #else
-    static_assert(false, "Implement MainFrame::DetectOtherModLoaders!");
+    #error "Implement MainFrame::DetectOtherModLoaders!"
     // Return a list of known mods if found (if possible, update
     // the page to say "please uninstall other loaders first" if 
     // this platform doesn't have any way of detecting existing ones)

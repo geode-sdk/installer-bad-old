@@ -1,3 +1,4 @@
 build/
 eula.hpp
 GeodeInstaller.exe.manifest
+.vscode/
