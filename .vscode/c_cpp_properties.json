@@ -4,7 +4,8 @@
             "name": "Win32",
             "includePath": [
                 "C:\\wxWidgets-3.1.6\\include",
-                "C:\\wxWidgets-3.1.6\\include\\msvc"
+                "C:\\wxWidgets-3.1.6\\include\\msvc",
+                "${workspaceFolder}/libgit2/include"
             ],
             "defines": [
                 "_DEBUG",

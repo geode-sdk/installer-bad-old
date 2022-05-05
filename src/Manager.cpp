@@ -1,10 +1,10 @@
 #include "Manager.hpp"
 #include <fstream>
-#include "include/json.hpp"
 #include "objc.h"
 #include <wx/zipstrm.h>
 #include <wx/wfstream.h>
 #include <wx/stdpaths.h>
+#include "include/json.hpp"
 
 #define INSTALL_DATA_JSON "installer.json"
 
@@ -14,7 +14,10 @@
 #include <wx/msw/registry.h>
 
 #define REGKEY_GEODE "Software\\GeodeSDK"
-#define REGVAL_INSTALLDIR "InstallInfo"
+#define REGSUB_INSTALLATIONS "Installations"
+#define REGVAL_SDKDIR "SDKDirectory"
+#define REGVAL_INSTPATH "Path"
+#define REGVAL_INSTEXE "Exe"
 
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
@@ -261,30 +264,12 @@ ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
     #endif
 }
 
-ghc::filesystem::path Manager::getDefaultDataDirectory() const {
-    #ifdef _WIN32
-
-    return ghc::filesystem::path(
-        wxStandardPaths::Get().GetUserLocalDataDir().ToStdWstring()
-    ).parent_path() / "GeodeSDK";
-
-    #elif defined(__APPLE__)
-    return this->getDefaultSDKDirectory();
-    #else
-    #error "Implement Manager::getDefaultDataDirectory"
-    #endif
-}
-
 ghc::filesystem::path const& Manager::getSDKDirectory() const {
     return m_sdkDirectory;
 }
 
 void Manager::setSDKDirectory(ghc::filesystem::path const& path) {
     m_sdkDirectory = path;
-}
-
-ghc::filesystem::path const& Manager::getDataDirectory() const {
-    return m_dataDirectory;
 }
 
 std::set<Installation> const& Manager::getInstallations() const {
@@ -297,99 +282,91 @@ bool Manager::isFirstTime() const {
 
 
 Result<> Manager::loadData() {
-    m_dataDirectory = this->getDefaultDataDirectory();
     m_sdkDirectory = this->getDefaultSDKDirectory();
 
     #ifdef _WIN32
 
     wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (key.HasValue(REGVAL_INSTALLDIR)) {
-        wxString value;
-        key.QueryValue(REGVAL_INSTALLDIR, value);
-        m_dataDirectory = value.ToStdWstring();
+    if (key.Exists()) {
         m_dataLoaded = true;
-    }
-
-    #elif defined(__APPLE__)
-
-    m_dataLoaded = true;
-
-    #else
-    static_assert(false, "Implement Manager::LoadData!");
-    // get Geode dir location or set default
-    #endif
-
-    auto installJsonPath = m_dataDirectory / INSTALL_DATA_JSON;
-    if (ghc::filesystem::exists(installJsonPath)) {
-        std::ifstream file(installJsonPath);
-        if (!file.is_open()) return Err("Unable to load installation info");
-        std::string data(std::istreambuf_iterator<char>{file}, {});
-        try {
-            auto json = nlohmann::json::parse(data);
-            if (json.contains("sdk") && !json["sdk"].is_null()) {
-                m_sdkDirectory = json["sdk"].get<std::string>();
-                m_sdkInstalled = true;
+        if (key.HasValue(REGVAL_SDKDIR)) {
+            wxString value;
+            key.QueryValue(REGVAL_SDKDIR, value);
+            m_sdkDirectory = value.ToStdWstring();
+            m_sdkInstalled = true;
+        }
+        if (key.HasSubKey(REGSUB_INSTALLATIONS)) {
+            wxRegKey sub(wxRegKey::HKLM, REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
+            wxString subKey;
+            long index = 0;
+            for (
+                auto cont = sub.GetFirstKey(subKey, index);
+                cont;
+                cont = sub.GetNextKey(subKey, index)
+            ) {
+                wxRegKey instKey(
+                    wxRegKey::HKLM,
+                    REGKEY_GEODE "\\" REGSUB_INSTALLATIONS "\\" + subKey
+                );
+                Installation inst;
+                
+                wxString value;
+                instKey.QueryValue(REGVAL_INSTPATH, value);
+                inst.m_path = value.ToStdWstring();
+                instKey.QueryValue(REGVAL_INSTEXE, value);
+                inst.m_exe = value;
+                
+                m_installations.insert(inst);
             }
-            for (auto& i : json["installations"]) {
-                m_installations.insert({
-                    i["path"].get<std::string>(),
-                    i["exe"].get<std::string>()
-                });
-            }
-        } catch(std::exception& e) {
-            return Err("Unable to load installation info: " + std::string(e.what()));
         }
     }
-    
+
+    #else
+    #error "Implement Manager::loadData"
+    #endif
+
     return Ok();
 }
 
 Result<> Manager::saveData() {
-    ghc::filesystem::path installJsonPath = m_dataDirectory / INSTALL_DATA_JSON;
-
-    if (
-        !ghc::filesystem::exists(m_dataDirectory) &&
-        !ghc::filesystem::create_directories(m_dataDirectory)
-    ) {
-        return Err("Unable to create GeodeSDK directory at " + m_dataDirectory.string());
-    }
-
-    auto json = nlohmann::json::object();
-    try {
-        if (m_sdkInstalled) {
-            json["sdk"] = m_sdkDirectory.string();
-        }
-        json["installations"] = nlohmann::json::array();
-        for (auto& i : m_installations) {
-            auto obj = nlohmann::json::object();
-            obj["path"] = i.m_path.string();
-            obj["exe"] = i.m_exe.ToStdString();
-            json["installations"].push_back(obj);
-        }
-    } catch(...) {}
-
-    {
-        std::wofstream file(installJsonPath);
-        if (!file.is_open()) return Err(
-            "Can't save file at " + installJsonPath.string()
-        );
-        file << json.dump(4);
-    }
-
     #ifdef _WIN32
+
+    #define UHHH_WELP(err) \
+        return Err(err " - the installer wont be able to uninstall Geode!")
+
     wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
     if (!key.Create()) {
-        return Err(
-            "Unable to create Registry Key - "
-            "the installer wont be able to uninstall Geode!"
-        );
+        UHHH_WELP("Unable to create " REGKEY_GEODE);
     }
-    if (!key.SetValue(REGVAL_INSTALLDIR, m_dataDirectory.wstring())) {
-        return Err(
-            "Unable to save Registry Key - "
-            "the installer wont be able to uninstall Geode!"
-        );
+    if (m_sdkInstalled) {
+        if (!key.SetValue(REGVAL_SDKDIR, m_sdkDirectory.wstring())) {
+            UHHH_WELP("Unable to save " REGKEY_GEODE "\\" REGVAL_SDKDIR);
+        }
     }
+    wxRegKey subKey(wxRegKey::HKLM, REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
+    if (!subKey.Create()) {
+        UHHH_WELP("Unable to create " REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
+    }
+    size_t ix = 0;
+    for (auto& inst : m_installations) {
+        auto keyName = REGKEY_GEODE "\\" REGSUB_INSTALLATIONS + 
+            std::string("\\") + std::to_string(ix);
+
+        wxRegKey instKey(wxRegKey::HKLM, keyName);
+        if (!instKey.Create()) {
+            UHHH_WELP("Unable to create " + keyName + "");
+        }
+        if (!instKey.SetValue(REGVAL_INSTPATH, inst.m_path.wstring())) {
+            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTPATH);
+        }
+        if (!instKey.SetValue(REGVAL_INSTEXE, inst.m_exe)) {
+            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTEXE);
+        }
+        ix++;
+    }
+
+    #else
+    #error "Implement Manager::saveData"
     #endif
 
     return Ok();
@@ -401,16 +378,22 @@ Result<> Manager::deleteData() {
     if (!key.DeleteSelf()) {
         return Err("Unable to delete registry key");
     }
+    #else
+    #error "Implement Manager::deleteData"
     #endif
 
-    if (ghc::filesystem::exists(m_dataDirectory)) {
-        if (!ghc::filesystem::remove_all(m_dataDirectory)) {
-            return Err("Unable to delete Geode directory");
-        }
-    }
     return Ok();
 }
 
+
+Result<> Manager::installSDK(
+    DevBranch branch,
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    CloneFinishFunc finishFunc
+) {
+    return Ok();
+}
 
 bool Manager::isSDKInstalled() const {
     return m_sdkInstalled;

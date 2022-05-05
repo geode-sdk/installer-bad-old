@@ -172,15 +172,29 @@ protected:
                 if (GET_EARLIER_PAGE(UninstallDeleteData)->shouldDeleteData()) {
                     auto dr = Manager::get()->deleteSaveDataFrom(inst);
                     if (!dr) {
-                        wxMessageBox(
-                            "Unable to delete Geode save data from " + inst.m_path.string() + ": " +
-                            ur.error() + ". You may need to manually remove "
-                            "the files; if the given installation is a GDPS, "
-                            "contact its owner for help. Otherwise, contact "
-                            "the Geode Development Team for more information.",
-                            "Error Uninstalling",
-                            wxICON_ERROR
-                        );
+                        // don't ask me why. ur.error() sometimes throws bad alloc.
+                        // this is fantastic code i think
+                        try {
+                            wxMessageBox(
+                                "Unable to delete Geode save data from " + inst.m_path.string() + ": " +
+                                ur.error() + ". You may need to manually remove "
+                                "the files; if the given installation is a GDPS, "
+                                "contact its owner for help. Otherwise, contact "
+                                "the Geode Development Team for more information.",
+                                "Error Uninstalling",
+                                wxICON_ERROR
+                            );
+                        } catch(std::exception&) {
+                            wxMessageBox(
+                                "Unable to delete Geode save data from " + inst.m_path.string() + 
+                                ". You may need to manually remove the files; if "
+                                "the given installation is a GDPS, contact its "
+                                "owner for help. Otherwise, contact the Geode "
+                                "Development Team for more information.",
+                                "Error Uninstalling",
+                                wxICON_ERROR
+                            );
+                        }
                     }
                 }
             }

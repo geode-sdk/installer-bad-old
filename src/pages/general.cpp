@@ -17,8 +17,8 @@ protected:
     void onSelect(wxCommandEvent& e) override {
         switch (e.GetId()) {
             case 0: m_frame->selectPageStructure(InstallType::InstallOnGDPS); break;
-            // case 1: m_frame->selectPageStructure(InstallType::InstallDevTools); break;
-            case 1: m_frame->selectPageStructure(InstallType::Uninstall); break;
+            case 1: m_frame->selectPageStructure(InstallType::InstallDevTools); break;
+            case 2: m_frame->selectPageStructure(InstallType::Uninstall); break;
             default: break;
         }
     }
@@ -28,7 +28,7 @@ public:
         this->addText("Welcome to the Geode installer!");
         this->addSelect({
             "Install Geode on a GDPS (Private Server)",
-            // "Install the Geode developer tools",
+            "Install the Geode developer tools",
             "Uninstall Geode"
         });
         frame->selectPageStructure(InstallType::InstallOnGDPS);

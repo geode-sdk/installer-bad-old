@@ -174,6 +174,7 @@ void MainFrame::selectPageStructure(InstallType type) {
             m_structure = {
                 PageID::EULA,
                 PageID::DevInstallSelectSDK,
+                PageID::DevInstallBranch,
                 PageID::DevInstall,
                 PageID::DevInstallFinished,
             };

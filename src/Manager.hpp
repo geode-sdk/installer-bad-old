@@ -42,14 +42,19 @@ enum OtherModFlags {
     OMF_GDHM = 0b1000,
 };
 
+enum class DevBranch {
+    Stable,
+    Nightly,
+};
+
 using DownloadErrorFunc = std::function<void(std::string const&)>;
 using DownloadProgressFunc = std::function<void(std::string const&, int)>;
 using DownloadFinishFunc = std::function<void(wxWebResponse const&)>;
+using CloneFinishFunc = std::function<void()>;
 
 class Manager : public wxEvtHandler {
 protected:
     ghc::filesystem::path m_sdkDirectory;
-    ghc::filesystem::path m_dataDirectory;
     std::set<Installation> m_installations;
     bool m_dataLoaded = false;
     bool m_sdkInstalled = false;
@@ -73,14 +78,23 @@ public:
     ghc::filesystem::path const& getSDKDirectory() const;
     void setSDKDirectory(ghc::filesystem::path const&);
     ghc::filesystem::path getDefaultSDKDirectory() const;
-    ghc::filesystem::path getDefaultDataDirectory() const;
-    ghc::filesystem::path const& getDataDirectory() const;
     std::set<Installation> const& getInstallations() const;
 
     Result<> loadData();
     Result<> saveData();
     Result<> deleteData();
 
+    void downloadCLI(
+        DownloadErrorFunc errorFunc,
+        DownloadProgressFunc progressFunc,
+        DownloadFinishFunc finishFunc
+    );
+    Result<> installSDK(
+        DevBranch branch, 
+        DownloadErrorFunc errorFunc,
+        DownloadProgressFunc progressFunc,
+        CloneFinishFunc finishFunc
+    );
     bool isSDKInstalled() const;
     Result<> uninstallSDK();
 
