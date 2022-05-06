@@ -10,6 +10,10 @@ configure_file(
 	${CMAKE_SOURCE_DIR}/src/include/eula.hpp.in
 	${CMAKE_SOURCE_DIR}/src/include/eula.hpp
 )
+configure_file(
+	${CMAKE_SOURCE_DIR}/src/include/info.hpp.in
+	${CMAKE_SOURCE_DIR}/src/include/info.hpp
+)
 
 file(GLOB_RECURSE SOURCES
 	src/*.cpp

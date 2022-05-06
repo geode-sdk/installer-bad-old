@@ -1,5 +1,6 @@
 #include "MainFrame.hpp"
 #include "Manager.hpp"
+#include "include/info.hpp"
 
 void MainFrame::onMouseLeftDown(wxMouseEvent& event) {
     if (!m_dragging) {
@@ -229,7 +230,7 @@ MainFrame::MainFrame() : wxFrame(
     auto bottomControls = new wxControl(this, wxID_ANY);
 
     auto bottomSizer = new wxStaticBoxSizer(
-        new wxStaticBox(bottomControls, wxID_ANY, "(c) Geode Team 2022"),
+        new wxStaticBox(bottomControls, wxID_ANY, "(c) Geode Team 2022 - " INSTALLER_VERSION),
         wxHORIZONTAL
     );
     
