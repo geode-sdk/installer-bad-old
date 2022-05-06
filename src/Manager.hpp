@@ -25,6 +25,14 @@ struct Installation {
      * Windows.
      */
     wxString m_exe;
+    /**
+     * Installed version
+     */
+    wxString m_version;
+    /**
+     * Installed version
+     */
+    wxString m_apiVersion;
 
     inline bool operator<(Installation const& other) const {
         return m_path < other.m_path;
@@ -49,7 +57,7 @@ enum class DevBranch {
 
 using DownloadErrorFunc = std::function<void(std::string const&)>;
 using DownloadProgressFunc = std::function<void(std::string const&, int)>;
-using DownloadFinishFunc = std::function<void(wxWebResponse const&)>;
+using DownloadFinishFunc = std::function<void(wxWebResponse const&, std::string const&)>;
 using CloneFinishFunc = std::function<void()>;
 
 class CallOnMainEvent : public wxEvent {
@@ -76,6 +84,7 @@ protected:
 
     void webRequest(
         std::string const& url,
+        std::string const& version,
         bool downloadFile,
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
@@ -110,6 +119,7 @@ public:
     Result<> installCLI(
         ghc::filesystem::path const& cliZipPath
     );
+    Result<> addCLIToPath();
     Result<> installSDK(
         DevBranch branch, 
         DownloadErrorFunc errorFunc,
@@ -132,7 +142,8 @@ public:
 
     Result<Installation> installLoaderFor(
         ghc::filesystem::path const& gdExePath,
-        ghc::filesystem::path const& zipLocation
+        ghc::filesystem::path const& zipLocation,
+        std::string const& version
     );
     Result<> installAPIFor(
         Installation const& installation,

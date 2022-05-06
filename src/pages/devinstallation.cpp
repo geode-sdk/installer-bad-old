@@ -102,6 +102,38 @@ REGISTER_PAGE(DevInstallBranch);
 
 /////////////////
 
+class PageDevInstallAddToPath : public Page {
+protected:
+    wxCheckBox* m_box;
+    bool m_addToPath = true;
+
+    void leave() override {
+        m_addToPath = m_box->IsChecked();
+    }
+
+public:
+    PageDevInstallAddToPath(MainFrame* frame) : Page(frame) {
+        this->addText(
+            "Would you like to add the Geode CLI to your "
+            "PATH environment variable? This will make "
+            "Geode usable from the command line anywhere "
+            "on your computer."
+        );
+
+        m_box = this->addToggle<PageDevInstallAddToPath>("Delete save data", nullptr);
+        m_box->SetValue(m_addToPath);
+
+        m_canContinue = true;
+    }
+
+    bool shouldAddToPath() const {
+        return m_addToPath;
+    }
+};
+REGISTER_PAGE(DevInstallAddToPath);
+
+/////////////////
+
 class PageDevInstall : public Page {
 protected:
     wxStaticText* m_status;
@@ -123,7 +155,7 @@ protected:
                 this->setText(m_status, "Downloading Geode CLI: " + text);
                 m_gauge->SetValue(prog);
             },
-            [this](wxWebResponse const& wres) -> void {
+            [this](wxWebResponse const& wres, auto) -> void {
                 auto installRes = Manager::get()->installCLI(
                     wres.GetDataFile().ToStdWstring()
                 );
@@ -153,6 +185,16 @@ protected:
                             this->setText(m_status, "Cloning SDK: " + text);
                         },
                         [this]() -> void {
+                            if (GET_EARLIER_PAGE(DevInstallAddToPath)->shouldAddToPath()) {
+                                auto res = Manager::get()->addCLIToPath();
+                                if (!res) {
+                                    wxMessageBox(
+                                        "Error adding Geode CLI to Path: " + res.error(),
+                                        "Error Installing",
+                                        wxICON_ERROR
+                                    );
+                                }
+                            }
                             m_frame->nextPage();
                         }
                     );

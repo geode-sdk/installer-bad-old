@@ -20,6 +20,8 @@
 #define REGVAL_SDKDIR "SDKDirectory"
 #define REGVAL_INSTPATH "Path"
 #define REGVAL_INSTEXE "Exe"
+#define REGVAL_INSTVERSION "Version"
+#define REGVAL_INSTAPIVERSION "APIVersion"
 
 #define ENVVAR_SDK "GEODE_SUITE"
 
@@ -76,6 +78,7 @@ Result<> Manager::finishSDKInstallation() {
 
 void Manager::webRequest(
     std::string const& url,
+    std::string const& version,
     bool downloadFile,
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
@@ -91,8 +94,7 @@ void Manager::webRequest(
     }
     this->Bind(
         wxEVT_WEBREQUEST_STATE,
-        [errorFunc, progressFunc, finishFunc](wxWebRequestEvent& evt)
-     -> void {
+        [version, errorFunc, progressFunc, finishFunc](wxWebRequestEvent& evt) -> void {
         switch (evt.GetState()) {
             case wxWebRequest::State_Completed: {
                 auto res = evt.GetResponse();
@@ -104,7 +106,7 @@ void Manager::webRequest(
                     if (!errorFunc) return;
                     return errorFunc("Web request returned " + std::to_string(res.GetStatus()));
                 }
-                if (finishFunc) finishFunc(res);
+                if (finishFunc) finishFunc(res, version);
             } break;
 
             case wxWebRequest::State_Active: {
@@ -195,10 +197,13 @@ void Manager::downloadLoader(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/loader/releases/latest",
+        "",
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+        [this, errorFunc, progressFunc, finishFunc](
+            wxWebResponse const& res, std::string const&
+        ) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
 
@@ -210,6 +215,7 @@ void Manager::downloadLoader(
                     if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
+                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -236,10 +242,11 @@ void Manager::downloadAPI(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/api/releases/latest",
+        "",
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res, auto) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
 
@@ -251,6 +258,7 @@ void Manager::downloadAPI(
                     if (name.find(".geode") != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
+                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -277,10 +285,11 @@ void Manager::downloadCLI(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/cli/releases/latest",
+        "",
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res, auto) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
 
@@ -292,6 +301,7 @@ void Manager::downloadCLI(
                     if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
+                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -387,10 +397,18 @@ Result<> Manager::loadData() {
                 Installation inst;
                 
                 wxString value;
-                instKey.QueryValue(REGVAL_INSTPATH, value);
-                inst.m_path = value.ToStdWstring();
-                instKey.QueryValue(REGVAL_INSTEXE, value);
-                inst.m_exe = value;
+                if (instKey.QueryValue(REGVAL_INSTPATH, value)) {
+                    inst.m_path = value.ToStdWstring();
+                }
+                if (instKey.QueryValue(REGVAL_INSTEXE, value)) {
+                    inst.m_exe = value;
+                }
+                if (
+                    instKey.HasValue(REGVAL_INSTVERSION) &&
+                    instKey.QueryValue(REGVAL_INSTVERSION, value)
+                ) {
+                    inst.m_version = value;
+                }
                 
                 m_installations.insert(inst);
             }
@@ -438,6 +456,9 @@ Result<> Manager::saveData() {
         if (!instKey.SetValue(REGVAL_INSTEXE, inst.m_exe)) {
             UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTEXE);
         }
+        if (!instKey.SetValue(REGVAL_INSTVERSION, inst.m_version)) {
+            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTVERSION);
+        }
         ix++;
     }
 
@@ -473,6 +494,36 @@ Result<> Manager::installCLI(
         return Err("Unable to create directory " + targetDir.string());
     }
     return this->unzipTo(cliZipPath, targetDir);
+}
+
+Result<> Manager::addCLIToPath() {
+    #ifdef _WIN32
+    wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
+    wxString path;
+    if (!key.QueryValue("Path", path)) {
+        return Err("Unable to read Path environment variable");
+    }
+    auto toAdd = (m_sdkDirectory / "bin").wstring() + ";";
+    if (path.Contains(toAdd)) {
+        return Ok();
+    }
+    path += toAdd;
+    if (!key.SetValue("Path", path)) {
+        return Err("Unable to save Path environment variable");
+    }
+    SendMessageTimeout(
+        HWND_BROADCAST,
+        WM_SETTINGCHANGE,
+        0,
+        reinterpret_cast<LPARAM>(L"Environment"),
+        SMTO_ABORTIFHUNG,
+        5000,
+        nullptr
+    );
+    return Ok();
+    #else
+    #error "Implement Manager::addCLIToPath"
+    #endif
 }
 
 Result<> Manager::installSDK(
@@ -584,6 +635,15 @@ Result<> Manager::uninstallSDK() {
     if (!key.DeleteValue(ENVVAR_SDK)) {
         return Err("Unable to delete " ENVVAR_SDK " environment variable");
     }
+    wxString path;
+    if (!key.QueryValue("Path", path)) {
+        return Err("Unable to read Path environment variable");
+    }
+    auto toRemove = (m_sdkDirectory / "bin").wstring() + ";";
+    path.Replace(toRemove, "");
+    if (!key.SetValue("Path", path)) {
+        return Err("Unable to save Path environment variable");
+    }
     SendMessageTimeout(
         HWND_BROADCAST,
         WM_SETTINGCHANGE,
@@ -602,11 +662,13 @@ Result<> Manager::uninstallSDK() {
 
 Result<Installation> Manager::installLoaderFor(
     ghc::filesystem::path const& gdExePath,
-    ghc::filesystem::path const& zipLocation
+    ghc::filesystem::path const& zipLocation,
+    std::string const& version
 ) {
     Installation inst;
     inst.m_exe = gdExePath.filename().wstring();
     inst.m_path = gdExePath.parent_path();
+    inst.m_version = version;
 
     #ifdef _WIN32
 

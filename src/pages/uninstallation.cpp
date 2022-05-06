@@ -100,6 +100,13 @@ public:
         }
         return false;
     }
+
+    size_t selectedAmount() const {
+        if (GET_EARLIER_PAGE(UninstallStart)->completeUninstall()) {
+            return m_items.size();
+        }
+        return m_selected.size();
+    }
 };
 REGISTER_PAGE(UninstallSelect);
 
@@ -116,6 +123,9 @@ protected:
     }
 
     void enter() override {
+        if (!GET_EARLIER_PAGE(UninstallSelect)->selectedAmount()) {
+            m_skipThis = true;
+        }
         this->setText(m_info, 
             "Do you also want to delete all save data associated "
             "with " + std::string(
@@ -246,6 +256,20 @@ REGISTER_PAGE(Uninstall);
 /////////////////
 
 class PageUninstallFinished : public Page {
+protected:
+    void enter() override {
+        if (!GET_EARLIER_PAGE(UninstallStart)->completeUninstall()) {
+            auto res = Manager::get()->saveData();
+            if (!res) {
+                wxMessageBox(
+                    "Unable to save installer data: " + res.error(),
+                    "Error",
+                    wxICON_ERROR
+                );
+            }
+        }
+    }
+
 public:
     PageUninstallFinished(MainFrame* frame) : Page(frame) {
         this->addText(

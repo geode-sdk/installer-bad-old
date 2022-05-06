@@ -19,6 +19,7 @@ enum class PageID {
 
     DevInstallSelectSDK,
     DevInstallBranch,
+    DevInstallAddToPath,
     DevInstall,
     DevInstallFinished,
 
