@@ -120,7 +120,7 @@ public:
             "on your computer."
         );
 
-        m_box = this->addToggle<PageDevInstallAddToPath>("Delete save data", nullptr);
+        m_box = this->addToggle<PageDevInstallAddToPath>("Add CLI to Path", nullptr);
         m_box->SetValue(m_addToPath);
 
         m_canContinue = true;

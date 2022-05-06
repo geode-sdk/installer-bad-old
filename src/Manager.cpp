@@ -57,7 +57,7 @@ Result<> Manager::finishSDKInstallation() {
     #ifdef _WIN32
 
     wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
-    if (!key.SetValue(ENVVAR_SDK, m_sdkDirectory.wstring())) {
+    if (!key.SetValue(ENVVAR_SDK, (m_sdkDirectory / "suite").wstring())) {
         return Err("Unable to set " ENVVAR_SDK " environment variable");
     }
     SendMessageTimeout(

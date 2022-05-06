@@ -175,6 +175,7 @@ void MainFrame::selectPageStructure(InstallType type) {
                 PageID::EULA,
                 PageID::DevInstallSelectSDK,
                 PageID::DevInstallBranch,
+                PageID::DevInstallAddToPath,
                 PageID::DevInstall,
                 PageID::DevInstallFinished,
             };
