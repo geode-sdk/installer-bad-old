@@ -34,10 +34,11 @@ protected:
     void onClose(wxCloseEvent&);
     void onResize(wxSizeEvent&);
 
+    void loaderUpdateWindow();
+
     void onNext(wxCommandEvent&);
     void onPrev(wxCommandEvent&);
     void onQuit(wxCommandEvent&);
-
     friend class Page;
 
 public:

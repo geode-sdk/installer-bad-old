@@ -39,9 +39,14 @@ protected:
         } else {
             info += "SDK has not been installed\n\n";
         }
+        size_t ix = 0;
         for (auto& inst : Manager::get()->getInstallations()) {
+            if (ix == Manager::get()->getDefaultInstallation()) {
+                info += "(Default) ";
+            }
             info += "Geode loader " + inst.m_version + "\n";
             info += inst.m_path.wstring() + "\n\n";
+            ix++;
         }
         wxMessageBox(info, "Installations");
     }

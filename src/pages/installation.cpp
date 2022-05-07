@@ -246,6 +246,8 @@ REGISTER_PAGE(Install);
 
 class PageInstallFinished : public Page {
 protected:
+    wxCheckBox* m_box;
+
     void enter() override {
         auto res = Manager::get()->saveData();
         if (!res) {
@@ -258,12 +260,20 @@ protected:
         }
     }
 
+    void leave() override {
+        if (m_box->IsChecked()) {
+            Manager::get()->launch(GET_EARLIER_PAGE(InstallSelectGD)->getPath());
+        }
+    }
+
 public:
     PageInstallFinished(MainFrame* frame) : Page(frame) {
         this->addText(
             "Installing finished! "
             "You can now close this installer && start up Geometry Dash :)"
         );
+        m_box = this->addToggle<PageInstallFinished>("Launch Geometry Dash", nullptr);
+        m_box->SetValue(true);
         this->addButton("Support Discord Server", &MainFrame::onDiscord, m_frame);
 
         m_canContinue = true;
