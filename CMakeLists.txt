@@ -2,8 +2,8 @@ cmake_minimum_required(VERSION 3.10)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED On)
 
-project(GeodeInstaller VERSION 0.1.1)
-set(PROJECT_VERSION_COMMA 0,1,1)
+project(GeodeInstaller VERSION 0.1.2)
+set(PROJECT_VERSION_COMMA 0,1,2)
 
 file(READ "EULA" GEODE_EULA)
 configure_file(
