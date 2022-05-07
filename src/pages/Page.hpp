@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../include/wx.hpp"
+#include <unordered_map>
 
 class Page;
 class MainFrame;

@@ -36,11 +36,19 @@ protected:
     }
 
     void onBrowse(wxCommandEvent&) {
+        #if _WIN32
         wxFileDialog ofd(
             this, "Select Geometry Dash", "", "",
             "Executable files (*.exe)|*.exe",
             wxFD_OPEN | wxFD_FILE_MUST_EXIST 
         );
+        #else
+        wxFileDialog ofd(
+            this, "Select Geometry Dash", "", "",
+            "Applications (*.app)|*.app",
+            wxFD_OPEN | wxFD_FILE_MUST_EXIST 
+        );
+        #endif
         if (ofd.ShowModal() == wxID_CANCEL) return;
         m_pathInput->SetValue(ofd.GetPath());
     }
@@ -51,9 +59,15 @@ protected:
 
     void updateContinue() {
         auto path = m_pathInput->GetValue().ToStdWstring();
+        #if _WIN32
         m_canContinue =
             ghc::filesystem::exists(path) &&
             ghc::filesystem::is_regular_file(path);
+        #else
+        m_canContinue =
+            ghc::filesystem::exists(path) &&
+            ghc::filesystem::is_directory(path);
+        #endif
         m_frame->updateControls();
     }
 

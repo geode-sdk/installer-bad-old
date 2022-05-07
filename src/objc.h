@@ -3,4 +3,4 @@
 #include <string>
 #include <optional>
 
-std::optional<std::string> FigureOutGDPathObjC();
+std::optional<std::string> FigureOutGDPathMac();

@@ -31,12 +31,12 @@
 #elif defined(__APPLE__)
 
 #include <CoreServices/CoreServices.h>
-
+#include "objc.h"
 #define PLATFORM_ASSET_IDENTIFIER "mac"
 #define PLATFORM_NAME "MacOS"
 
 #else
-#error "Define PLATFORM_ASSET_IDENTIFIER & PLATFORM_NAME"
+#warning "Define PLATFORM_ASSET_IDENTIFIER & PLATFORM_NAME"
 #endif
 
 wxDEFINE_EVENT(CALL_ON_MAIN, CallOnMainEvent);
@@ -72,7 +72,9 @@ Result<> Manager::finishSDKInstallation() {
     return Ok();
 
     #else
-    #error "Implement Manager::finishSDKInstallation"
+
+    #warning "Implement Manager::finishSDKInstallation"
+
     #endif
 }
 
@@ -346,7 +348,7 @@ ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
     return ghc::filesystem::path(path) / "GeodeSDK";
 
     #else
-    #error "Implement Manager::getDefaultGeodeDirectory"
+    #warning "Implement Manager::getDefaultGeodeDirectory"
     #endif
 }
 
@@ -416,7 +418,7 @@ Result<> Manager::loadData() {
     }
 
     #else
-    #error "Implement Manager::loadData"
+    #warning "Implement Manager::loadData"
     #endif
 
     return Ok();
@@ -463,7 +465,7 @@ Result<> Manager::saveData() {
     }
 
     #else
-    #error "Implement Manager::saveData"
+    #warning "Implement Manager::saveData"
     #endif
 
     return Ok();
@@ -476,7 +478,7 @@ Result<> Manager::deleteData() {
         return Err("Unable to delete registry key");
     }
     #else
-    #error "Implement Manager::deleteData"
+    #warning "Implement Manager::deleteData"
     #endif
 
     return Ok();
@@ -522,7 +524,7 @@ Result<> Manager::addCLIToPath() {
     );
     return Ok();
     #else
-    #error "Implement Manager::addCLIToPath"
+    #warning "Implement Manager::addCLIToPath"
     #endif
 }
 
@@ -615,7 +617,7 @@ Result<> Manager::installSDK(
     return Ok();
 
     #else
-    #error "Implement Manager::installSDK"
+    #warning "Implement Manager::installSDK"
     #endif
 }
 
@@ -654,7 +656,7 @@ Result<> Manager::uninstallSDK() {
         nullptr
     );
     #else
-    #error "Implement Manager::uninstallSDK"
+    #warning "Implement Manager::uninstallSDK"
     #endif
     return Ok();
 }
@@ -678,7 +680,7 @@ Result<Installation> Manager::installLoaderFor(
     }
 
     #elif defined(__APPLE__)
-    #error "Do you just unzip the Geode dylib to the GD folder on mac? or where do you put it"
+    #warning "Do you just unzip the Geode dylib to the GD folder on mac? or where do you put it"
     #else
     static_assert(false, "Implement installation proper for this platform");
     #endif
@@ -732,7 +734,7 @@ Result<> Manager::uninstallFrom(Installation const& inst) {
     #elif defined(__APPLE__)
     std::cout << "balls 2\n";
     #else
-    #error "Implement MainFrame::UninstallGeode"
+    #warning "Implement MainFrame::UninstallGeode"
     #endif
 }
 
@@ -752,7 +754,7 @@ Result<> Manager::deleteSaveDataFrom(Installation const& inst) {
     #elif defined(__APPLE__)
     std::cout << "cocks\n";
     #else
-    #error "Implement MainFrame::DeleteSaveData"
+    #warning "Implement MainFrame::DeleteSaveData"
     #endif
 }
 
@@ -806,10 +808,10 @@ std::optional<ghc::filesystem::path> Manager::findDefaultGDPath() const {
 
     #elif defined(__APPLE__)
 
-    return figureOutGdPath();
+    return FigureOutGDPathMac();
 
     #else
-    #error "Implement Manager::FindDefaultGDPath!"
+    #warning "Implement Manager::FindDefaultGDPath!"
     // If there's no automatic path figure-outing here, just return ""
     #endif
 }
@@ -847,7 +849,7 @@ int Manager::doesDirectoryContainOtherMods(
     return flags; // there are no other conflicts
 
     #else
-    #error "Implement MainFrame::DetectOtherModLoaders!"
+    #warning "Implement MainFrame::DetectOtherModLoaders!"
     // Return a list of known mods if found (if possible, update
     // the page to say "please uninstall other loaders first" if 
     // this platform doesn't have any way of detecting existing ones)
