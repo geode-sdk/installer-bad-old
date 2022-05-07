@@ -55,10 +55,17 @@ enum class DevBranch {
     Nightly,
 };
 
+enum class InstallerMode {
+    Normal,
+    UpdateLoader,
+};
+
 using DownloadErrorFunc = std::function<void(std::string const&)>;
 using DownloadProgressFunc = std::function<void(std::string const&, int)>;
 using DownloadFinishFunc = std::function<void(wxWebResponse const&, std::string const&)>;
 using CloneFinishFunc = std::function<void()>;
+
+class GeodeInstallerApp;
 
 class CallOnMainEvent : public wxEvent {
 protected:
@@ -78,9 +85,12 @@ public:
 class Manager : public wxEvtHandler {
 protected:
     ghc::filesystem::path m_sdkDirectory;
-    std::set<Installation> m_installations;
+    std::vector<Installation> m_installations;
+    size_t m_defaultInstallation;
     bool m_dataLoaded = false;
     bool m_sdkInstalled = false;
+    InstallerMode m_mode = InstallerMode::Normal;
+    ghc::filesystem::path m_loaderUpdatePath;
 
     void webRequest(
         std::string const& url,
@@ -98,14 +108,22 @@ protected:
     void onSyncThreadCall(CallOnMainEvent&);
     Result<> finishSDKInstallation();
 
+    void addInstallation(Installation const& inst);
+
+    friend class GeodeInstallerApp;
+
 public:
     static Manager* get();
+    
+    InstallerMode getInstallerMode() const;
+    ghc::filesystem::path const& getLoaderUpdatePath() const;
 
     bool isFirstTime() const;
     ghc::filesystem::path const& getSDKDirectory() const;
     void setSDKDirectory(ghc::filesystem::path const&);
     ghc::filesystem::path getDefaultSDKDirectory() const;
-    std::set<Installation> const& getInstallations() const;
+    std::vector<Installation> const& getInstallations() const;
+    size_t getDefaultInstallation() const;
 
     Result<> loadData();
     Result<> saveData();
@@ -152,6 +170,8 @@ public:
     );
     Result<> uninstallFrom(Installation const& installation);
     Result<> deleteSaveDataFrom(Installation const& installation);
+
+    void launch(ghc::filesystem::path const& path);
 
     /**
      * Find default installation of GD.

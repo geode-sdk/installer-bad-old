@@ -130,6 +130,7 @@ void MainFrame::nextPage() {
             this->nextPage();
         }
     } else {
+        m_current->leave();
         this->Close();
     }
 }
@@ -194,6 +195,53 @@ void MainFrame::selectPageStructure(InstallType type) {
     }
 }
 
+void MainFrame::loaderUpdateWindow() {
+    auto sizer = new wxBoxSizer(wxVERTICAL);
+
+    auto label = new wxStaticText(this, wxID_ANY, "Updating loader...");
+    sizer->Add(label, 0, wxALL, 10);
+    auto gauge = new wxGauge(this, wxID_ANY, 100);
+    sizer->Add(gauge, 0, wxALL | wxEXPAND, 10);
+
+    Manager::get()->downloadLoader(
+        [](std::string const& error) -> void {
+            wxMessageBox(
+                "Error updating Geode: " + error + ". Try "
+                "again, and if the problem persists, contact "
+                "the Geode Development team for more help.",
+                "Error Updating",
+                wxICON_ERROR
+            );
+        },
+        [label, gauge](std::string const& info, int prog) -> void {
+            gauge->SetValue(prog);
+            label->SetLabel("Updating loader: " + info);
+        },
+        [this, gauge](wxWebResponse const& res, std::string const& version) -> void {
+            gauge->SetValue(100);
+            auto installRes = Manager::get()->installLoaderFor(
+                Manager::get()->getLoaderUpdatePath(),
+                res.GetDataFile().ToStdWstring(),
+                version
+            );
+            if (!installRes) {
+                wxMessageBox(
+                    "Error updating Geode: " + installRes.error() + ". Try "
+                    "again, and if the problem persists, contact "
+                    "the Geode Development team for more help.",
+                    "Error Updating",
+                    wxICON_ERROR
+                );
+            } else {
+                Manager::get()->launch(Manager::get()->getLoaderUpdatePath());
+                this->Close();
+            }
+        }
+    );
+
+    this->SetSizer(sizer);
+}
+
 MainFrame::MainFrame() : wxFrame(
     nullptr,
     wxID_ANY,
@@ -209,6 +257,16 @@ MainFrame::MainFrame() : wxFrame(
         );
     }
 
+    if (Manager::get()->getInstallerMode() == InstallerMode::UpdateLoader) {
+        this->SetSize({ 440, 100 });
+        this->SetMinSize({ 440, 100 });
+        this->SetMaxSize({ 440, 100 });
+
+        this->loaderUpdateWindow();
+
+        this->Layout();
+    }
+
     // for some reason the default bg color on windows
     // is ugly grey and wxWidgets doesn't appear to have 
     // dark mode support
@@ -216,6 +274,10 @@ MainFrame::MainFrame() : wxFrame(
     this->SetBackgroundColour({ 255, 255, 255 });
     #endif
     this->CenterOnScreen();
+
+    if (Manager::get()->getInstallerMode() == InstallerMode::UpdateLoader) {
+        return;
+    }
 
     this->Bind(wxEVT_LEFT_DOWN, &MainFrame::onMouseLeftDown, this);
     this->Bind(wxEVT_MOUSE_CAPTURE_LOST, &MainFrame::onMouseCaptureLost, this);

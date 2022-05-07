@@ -7,6 +7,7 @@
 #include "include/json.hpp"
 #include <thread>
 #include <chrono>
+#include <algorithm>
 
 #define INSTALL_DATA_JSON "installer.json"
 
@@ -18,6 +19,7 @@
 #define REGKEY_GEODE "Software\\GeodeSDK"
 #define REGSUB_INSTALLATIONS "Installations"
 #define REGVAL_SDKDIR "SDKDirectory"
+#define REGVAL_DEFINST "Default"
 #define REGVAL_INSTPATH "Path"
 #define REGVAL_INSTEXE "Exe"
 #define REGVAL_INSTVERSION "Version"
@@ -48,6 +50,24 @@ Manager* Manager::get() {
 
 void Manager::onSyncThreadCall(CallOnMainEvent& e) {
     e.invoke();
+}
+
+void Manager::addInstallation(Installation const& inst) {
+    auto old = std::find(m_installations.begin(), m_installations.end(), inst);
+    if (old != m_installations.end()) {
+        *old = inst;
+    } else {
+        m_installations.push_back(inst);
+    }
+}
+
+
+InstallerMode Manager::getInstallerMode() const {
+    return m_mode;
+}
+
+ghc::filesystem::path const& Manager::getLoaderUpdatePath() const {
+    return m_loaderUpdatePath;
 }
 
 
@@ -360,8 +380,12 @@ void Manager::setSDKDirectory(ghc::filesystem::path const& path) {
     m_sdkDirectory = path;
 }
 
-std::set<Installation> const& Manager::getInstallations() const {
+std::vector<Installation> const& Manager::getInstallations() const {
     return m_installations;
+}
+
+size_t Manager::getDefaultInstallation() const {
+    return m_defaultInstallation;
 }
 
 bool Manager::isFirstTime() const {
@@ -412,7 +436,12 @@ Result<> Manager::loadData() {
                     inst.m_version = value;
                 }
                 
-                m_installations.insert(inst);
+                this->addInstallation(inst);
+            }
+            if (sub.HasValue(REGVAL_DEFINST)) {
+                long long defInst;
+                sub.QueryValue64(REGVAL_DEFINST, &defInst);
+                m_defaultInstallation = defInst;
             }
         }
     }
@@ -442,6 +471,9 @@ Result<> Manager::saveData() {
     wxRegKey subKey(wxRegKey::HKLM, REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
     if (!subKey.Create()) {
         UHHH_WELP("Unable to create " REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
+    }
+    if (m_installations.size()) {
+        subKey.SetValue64(REGVAL_DEFINST, m_defaultInstallation);
     }
     size_t ix = 0;
     for (auto& inst : m_installations) {
@@ -679,13 +711,19 @@ Result<Installation> Manager::installLoaderFor(
         return Err("Loader unzip error: " + ures.error());
     }
 
+    wxFile appid((inst.m_path / "steam_appid.txt").wstring(), wxFile::write);
+    appid.Write("322170");
+
     #elif defined(__APPLE__)
     #warning "Do you just unzip the Geode dylib to the GD folder on mac? or where do you put it"
     #else
     static_assert(false, "Implement installation proper for this platform");
     #endif
 
-    m_installations.insert(inst);
+    if (!m_installations.size()) {
+        m_defaultInstallation = 0;
+    }
+    this->addInstallation(inst);
 
     return Ok(inst);
 }
@@ -854,4 +892,17 @@ int Manager::doesDirectoryContainOtherMods(
     // the page to say "please uninstall other loaders first" if 
     // this platform doesn't have any way of detecting existing ones)
     #endif
+}
+
+void Manager::launch(ghc::filesystem::path const& path) {
+    wxExecuteEnv env;
+    env.cwd = path.parent_path().wstring();
+    if (!wxExecute(path.wstring(), 0, nullptr, &env)) {
+        wxMessageBox(
+            "Unable to automatically restart GD, please "
+            "open the game yourself.",
+            "Error Starting GD",
+            wxICON_ERROR
+        );
+    }
 }
