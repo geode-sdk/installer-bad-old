@@ -95,6 +95,7 @@ Result<> Manager::finishSDKInstallation() {
     #else
 
     // nothing we rly need to do
+    return Ok();
 
     #endif
 }
@@ -359,7 +360,7 @@ ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
     
     #elif defined(__APPLE__)
 
-    return "/Users/Shared/Geode/"; 
+    return "/Users/Shared/Geode/SDK"; 
     // it's literally hardcoded
     // there is no programatic way to get /Users/Shared
     #endif
@@ -656,7 +657,7 @@ Result<> Manager::installSDK(
 
         #else
 
-        auto lib = dlopen((m_sdkDirectory / "bin" / "geodeutils.dll").string().c_str(), RTLD_LAZY);
+        auto lib = dlopen((m_sdkDirectory / "bin" / "libgeodeutils.dylib").string().c_str(), RTLD_LAZY);
         if (!lib) {
             throwError("Unable to load library");
         }
