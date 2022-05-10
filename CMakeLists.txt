@@ -36,13 +36,6 @@ if (WIN32)
 	add_executable(${PROJECT_NAME} WIN32 ${SOURCES})
 	
 	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
-	
-	add_custom_command(
-		TARGET ${PROJECT_NAME}
-		POST_BUILD
-		COMMAND "mt.exe" -manifest \"${CMAKE_CURRENT_BINARY_DIR}\\${PROJECT_NAME}.exe.manifest\" -outputresource:"$<TARGET_FILE:${PROJECT_NAME}>"\;\#1
-		COMMENT "Adding manifest..."
-	)
 else()
 	file(GLOB_RECURSE OBJC_SOURCES
 		src/*.mm

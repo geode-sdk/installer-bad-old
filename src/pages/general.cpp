@@ -16,7 +16,7 @@ REGISTER_PAGE(NotFound);
 class PageStart : public Page {
 protected:
     void onSelect(wxCommandEvent& e) override {
-        if (Manager::get()->isSDKInstalled()) {
+        if (Manager::get()->isSuiteInstalled()) {
             switch (e.GetId()) {
                 case 0: m_frame->selectPageStructure(InstallType::InstallOnGDPS); break;
                 case 1: m_frame->selectPageStructure(InstallType::Uninstall); break;
@@ -25,18 +25,46 @@ protected:
         } else {
             switch (e.GetId()) {
                 case 0: m_frame->selectPageStructure(InstallType::InstallOnGDPS); break;
-                case 1: m_frame->selectPageStructure(InstallType::InstallDevTools); break;
+                case 1: {
+                    if (Manager::get()->needRequestAdminPriviledges()) {
+                        wxMessageBox(
+                            "You need to run the installer as "
+                            "administrator in order to install "
+                            "the developer tools.",
+                            "Admin Priviledges Required",
+                            wxICON_ERROR
+                        );
+                        m_canContinue = false;
+                        m_frame->updateControls();
+                        return;
+                    }
+                    m_frame->selectPageStructure(InstallType::InstallDevTools);
+                } break;
                 case 2: m_frame->selectPageStructure(InstallType::Uninstall); break;
                 default: break;
             }
         }
+        m_canContinue = true;
+        m_frame->updateControls();
     }
 
     void onViewInfo(wxCommandEvent&) {
-        wxString info = "Installations\n\n";
-        if (Manager::get()->isSDKInstalled()) {
+        wxString info = "";
+
+        #ifdef _WIN32
+        // this looks neat on windows message boxes 
+        // but not on mac
+        info += "Installations\n\n";
+        #endif
+
+        info += "Data directory: " + Manager::get()->getDataDirectory().wstring() + "\n";
+        info += "Bin directory: " + Manager::get()->getBinDirectory().wstring() + "\n";
+
+        if (Manager::get()->isSuiteInstalled()) {
+            info += "SDK directory: " + Manager::get()->getSuiteDirectory().wstring() + "\n\n";
             info += "SDK is installed, querying version\n\n";
         } else {
+            info += "\n";
             info += "SDK has not been installed\n\n";
         }
         size_t ix = 0;
@@ -54,7 +82,7 @@ protected:
 public:
     PageStart(MainFrame* frame) : Page(frame) {
         this->addText("Welcome to the Geode installer!");
-        if (Manager::get()->isSDKInstalled()) {
+        if (Manager::get()->isSuiteInstalled()) {
             this->addSelect({
                 "Install Geode on a GDPS (Private Server)",
                 "Uninstall Geode"

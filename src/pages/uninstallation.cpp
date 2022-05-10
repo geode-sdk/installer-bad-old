@@ -9,10 +9,31 @@ protected:
 
     void onSelect(wxCommandEvent& e) override {
         switch (e.GetId()) {
-            case 0: m_uninstallEverything = true; break;
+            case 0: {
+                if (
+                    Manager::get()->isSuiteInstalled() &&
+                    Manager::get()->needRequestAdminPriviledges()
+                ) {
+                    wxMessageBox(
+                        "You need to run the installer as "
+                        "administrator in order to uninstall "
+                        "the developer tools.",
+                        "Admin Priviledges Required",
+                        wxICON_ERROR
+                    );
+                    m_uninstallEverything = false;
+                    m_canContinue = false;
+                    m_frame->updateControls();
+                    return;
+                }
+                m_uninstallEverything = true;
+                
+            } break;
             case 1: m_uninstallEverything = false; break;
             default: break;
         }
+        m_canContinue = true;
+        m_frame->updateControls();
     }
 
 public:
@@ -23,6 +44,20 @@ public:
             "Choose which parts to uninstall"
         });
         m_canContinue = true;
+        if (
+            Manager::get()->isSuiteInstalled() &&
+            Manager::get()->needRequestAdminPriviledges()
+        ) {
+            wxMessageBox(
+                "You need to run the installer as "
+                "administrator in order to uninstall "
+                "the developer tools.",
+                "Admin Priviledges Required",
+                wxICON_ERROR
+            );
+            m_uninstallEverything = false;
+            m_canContinue = false;
+        }
     }
 
     bool completeUninstall() const {
@@ -36,17 +71,24 @@ REGISTER_PAGE(UninstallStart);
 class PageUninstallSelect : public Page {
 protected:
     wxCheckBox* m_devCheck = nullptr;
+    wxStaticText* m_devInfo = nullptr;
     wxDataViewListCtrl* m_list;
     std::unordered_map<size_t, Installation> m_items;
     std::set<size_t> m_selected;
-    bool m_shouldUninstallSDK;
 
     void enter() override {
+        if (
+            Manager::get()->isSuiteInstalled() &&
+            Manager::get()->needRequestAdminPriviledges()
+        ) {
+            m_devCheck->Disable();
+            m_devCheck->SetValue(false);
+            m_devInfo->Show();
+        } else {
+            if (m_devCheck) m_devCheck->Enable();
+            if (m_devCheck) m_devInfo->Hide();
+        }
         m_skipThis = GET_EARLIER_PAGE(UninstallStart)->completeUninstall();
-    }
-
-    void leave() override {
-        m_shouldUninstallSDK = m_devCheck ? m_devCheck->IsChecked() : false;
     }
 
     void onSelectPart(wxDataViewEvent& e) {
@@ -62,8 +104,14 @@ public:
     PageUninstallSelect(MainFrame* frame) : Page(frame) {
         this->addText("Please select which parts of Geode to uninstall.");
 
-        if (Manager::get()->isSDKInstalled()) {
+        if (Manager::get()->isSuiteInstalled()) {
             m_devCheck = this->addToggle<PageUninstallSelect>("Uninstall Developer SDK", nullptr);
+            m_devInfo = this->addText(
+                "You need to run the installer as "
+                "administrator to uninstall the "
+                "developer tools."
+            );
+            m_devInfo->Hide();
         }
 
         m_list = new wxDataViewListCtrl(this, wxID_ANY);
@@ -86,9 +134,9 @@ public:
         m_canContinue = true;
     }
 
-    bool shouldUninstallSDK() const {
+    bool shouldUninstallSuite() const {
         if (GET_EARLIER_PAGE(UninstallStart)->completeUninstall()) return true;
-        return m_shouldUninstallSDK;
+        return m_devCheck && m_devCheck->IsChecked();
     }
 
     bool shouldUninstall(Installation const& inst) const {
@@ -211,8 +259,8 @@ protected:
         }
         m_gauge->SetValue(33);
         m_frame->Update();
-        if (GET_EARLIER_PAGE(UninstallSelect)->shouldUninstallSDK()) {
-            auto sr = Manager::get()->uninstallSDK();
+        if (GET_EARLIER_PAGE(UninstallSelect)->shouldUninstallSuite()) {
+            auto sr = Manager::get()->uninstallSuite();
             if (!sr) {
                 wxMessageBox(
                     "Unable to uninstall the Geode SDK: " + sr.error() +

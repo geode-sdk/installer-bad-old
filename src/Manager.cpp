@@ -9,23 +9,14 @@
 #include <chrono>
 #include <algorithm>
 
-#define INSTALL_DATA_JSON "installer.json"
+#define INSTALL_DATA_JSON "config.json"
+#define GEODE_DIR "Geode"
+#define GEODE_SUITE_ENV "GEODE_SUITE"
 
 #ifdef _WIN32
 
 #include <Shlobj_core.h>
 #include <wx/msw/registry.h>
-
-#define REGKEY_GEODE "Software\\GeodeSDK"
-#define REGSUB_INSTALLATIONS "Installations"
-#define REGVAL_SDKDIR "SDKDirectory"
-#define REGVAL_DEFINST "Default"
-#define REGVAL_INSTPATH "Path"
-#define REGVAL_INSTEXE "Exe"
-#define REGVAL_INSTVERSION "Version"
-#define REGVAL_INSTAPIVERSION "APIVersion"
-
-#define ENVVAR_SDK "GEODE_SUITE"
 
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
@@ -62,24 +53,12 @@ void Manager::addInstallation(Installation const& inst) {
     }
 }
 
-
-InstallerMode Manager::getInstallerMode() const {
-    return m_mode;
-}
-
-ghc::filesystem::path const& Manager::getLoaderUpdatePath() const {
-    return m_loaderUpdatePath;
-}
-
-
-Result<> Manager::finishSDKInstallation() {
-    m_sdkInstalled = true;
-
+Result<> Manager::addSuiteEnv() {
     #ifdef _WIN32
 
     wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
-    if (!key.SetValue(ENVVAR_SDK, (m_sdkDirectory / "suite").wstring())) {
-        return Err("Unable to set " ENVVAR_SDK " environment variable");
+    if (!key.SetValue(GEODE_SUITE_ENV, m_suiteDirectory.wstring())) {
+        return Err("Unable to set " GEODE_SUITE_ENV " environment variable");
     }
     SendMessageTimeout(
         HWND_BROADCAST,
@@ -99,6 +78,16 @@ Result<> Manager::finishSDKInstallation() {
 
     #endif
 }
+
+
+InstallerMode Manager::getInstallerMode() const {
+    return m_mode;
+}
+
+ghc::filesystem::path const& Manager::getLoaderUpdatePath() const {
+    return m_loaderUpdatePath;
+}
+
 
 void Manager::webRequest(
     std::string const& url,
@@ -346,32 +335,47 @@ void Manager::downloadCLI(
 }
 
 
-ghc::filesystem::path Manager::getDefaultSDKDirectory() const {
+ghc::filesystem::path const& Manager::getDataDirectory() const {
+    return m_dataDirectory;
+}
+
+ghc::filesystem::path Manager::getDefaultDataDirectory() const {
     #ifdef _WIN32
 
-    TCHAR pf[MAX_PATH];
-    SHGetSpecialFolderPath(
-        nullptr,
-        pf,
-        CSIDL_PROGRAM_FILES,
-        false
-    );
-    return ghc::filesystem::path(pf) / "GeodeSDK";
+    // parent_path because wxWidgets returns 
+    // %localappdata%/%appname%
+    return ghc::filesystem::path(
+        wxStandardPaths::Get().GetUserLocalDataDir().ToStdWstring()
+    ).parent_path() / GEODE_DIR;
     
     #elif defined(__APPLE__)
 
-    return "/Users/Shared/Geode/SDK"; 
-    // it's literally hardcoded
-    // there is no programatic way to get /Users/Shared
+    return "/Users/Shared/" GEODE_DIR; 
+
     #endif
 }
 
-ghc::filesystem::path const& Manager::getSDKDirectory() const {
-    return m_sdkDirectory;
+
+ghc::filesystem::path const& Manager::getBinDirectory() const {
+    return m_binDirectory;
 }
 
-void Manager::setSDKDirectory(ghc::filesystem::path const& path) {
-    m_sdkDirectory = path;
+ghc::filesystem::path Manager::getDefaultBinDirectory() const {
+    return this->getDefaultDataDirectory() / "bin";
+}
+
+
+ghc::filesystem::path const& Manager::getSuiteDirectory() const {
+    return m_suiteDirectory;
+}
+
+ghc::filesystem::path Manager::getDefaultSuiteDirectory() const {
+    return this->getDefaultDataDirectory() / "suite";
+}
+
+
+void Manager::setSuiteDirectory(ghc::filesystem::path const& path) {
+    m_suiteDirectory = path;
 }
 
 std::vector<Installation> const& Manager::getInstallations() const {
@@ -388,173 +392,82 @@ bool Manager::isFirstTime() const {
 
 
 Result<> Manager::loadData() {
-    m_sdkDirectory = this->getDefaultSDKDirectory();
+    m_suiteDirectory = this->getDefaultSuiteDirectory();
+    m_dataDirectory = this->getDefaultDataDirectory();
+    m_binDirectory = this->getDefaultBinDirectory();
 
-    #ifdef _WIN32
+    auto configFile = m_dataDirectory / INSTALL_DATA_JSON;
 
-    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (key.Exists()) {
-        m_dataLoaded = true;
-        if (key.HasValue(REGVAL_SDKDIR)) {
-            wxString value;
-            key.QueryValue(REGVAL_SDKDIR, value);
-            m_sdkDirectory = value.ToStdWstring();
-            m_sdkInstalled = true;
-        }
-        if (key.HasSubKey(REGSUB_INSTALLATIONS)) {
-            wxRegKey sub(wxRegKey::HKLM, REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
-            wxString subKey;
-            long index = 0;
-            for (
-                auto cont = sub.GetFirstKey(subKey, index);
-                cont;
-                cont = sub.GetNextKey(subKey, index)
-            ) {
-                wxRegKey instKey(
-                    wxRegKey::HKLM,
-                    REGKEY_GEODE "\\" REGSUB_INSTALLATIONS "\\" + subKey
-                );
-                Installation inst;
-                
-                wxString value;
-                if (instKey.QueryValue(REGVAL_INSTPATH, value)) {
-                    inst.m_path = value.ToStdWstring();
-                }
-                if (instKey.QueryValue(REGVAL_INSTEXE, value)) {
-                    inst.m_exe = value;
-                }
-                if (
-                    instKey.HasValue(REGVAL_INSTVERSION) &&
-                    instKey.QueryValue(REGVAL_INSTVERSION, value)
-                ) {
-                    inst.m_version = value;
-                }
-                
-                this->addInstallation(inst);
-            }
-            if (sub.HasValue(REGVAL_DEFINST)) {
-                long long defInst;
-                sub.QueryValue64(REGVAL_DEFINST, &defInst);
-                m_defaultInstallation = defInst;
-            }
-        }
+    auto suite = getenv(GEODE_SUITE_ENV);
+    if (suite != nullptr) {
+        m_suiteDirectory = suite;
     }
+    m_suiteInstalled = suite;
 
-    #elif defined(__APPLE__)
-    char* suite = getenv("GEODE_SUITE");
-    m_dataLoaded = true;
-    if (suite != NULL) {
-        m_sdkDirectory = suite;
-    }
-
-    if (!wxFile::Exists("/Users/Shared/Geode/config.json"))
+    if (!wxFile::Exists(configFile.wstring())) {
         return Ok();
+    }
+
+    m_dataLoaded = true;
 
     wxFile file;
-    file.Open("/Users/Shared/Geode/config.json");
-
+    file.Open(configFile.wstring());
 
     wxString x;
     file.ReadAll(&x);
 
-    auto json = nlohmann::json::parse(std::string(x));
+    try {
+        auto json = nlohmann::json::parse(std::string(x));
 
-    for (auto install : json["installations"]) {
-        Installation inst;
-        inst.m_path = std::string(install["path"]);
-        inst.m_exe = std::string(install["executable"]);
-        inst.m_version = std::string(install["version"]);
-        this->addInstallation(inst);
+        for (auto install : json["installations"]) {
+            Installation inst;
+            inst.m_path = std::string(install["path"]);
+            inst.m_exe = std::string(install["executable"]);
+            inst.m_version = std::string(install["version"]);
+            this->addInstallation(inst);
+        }
+
+        if (json.contains("default-installation")) {
+            m_defaultInstallation = json["default-installation"];
+        }
+    } catch(std::exception& e) {
+        return Err("Unable to parse " INSTALL_DATA_JSON ": " + std::string(e.what()));
     }
-
-    m_defaultInstallation = json["default-installation"];
-    m_defaultInstallation = json["has-sdk"];
-
-    file.Close();
-    #endif
 
     return Ok();
 }
 
 Result<> Manager::saveData() {
-    #ifdef _WIN32
+    if (!ghc::filesystem::exists(m_dataDirectory)) {
+        ghc::filesystem::create_directories(m_dataDirectory);
+    }
 
-    #define UHHH_WELP(err) \
-        return Err(err " - the installer wont be able to uninstall Geode!")
+    std::ofstream ofs(m_dataDirectory / INSTALL_DATA_JSON);
 
-    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (!key.Create()) {
-        UHHH_WELP("Unable to create " REGKEY_GEODE);
-    }
-    if (m_sdkInstalled) {
-        if (!key.SetValue(REGVAL_SDKDIR, m_sdkDirectory.wstring())) {
-            UHHH_WELP("Unable to save " REGKEY_GEODE "\\" REGVAL_SDKDIR);
-        }
-    }
-    wxRegKey subKey(wxRegKey::HKLM, REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
-    if (!subKey.Create()) {
-        UHHH_WELP("Unable to create " REGKEY_GEODE "\\" REGSUB_INSTALLATIONS);
-    }
+    nlohmann::json config;
+
     if (m_installations.size()) {
-        subKey.SetValue64(REGVAL_DEFINST, m_defaultInstallation);
+        config["default-installation"] = m_defaultInstallation;
     }
-    size_t ix = 0;
-    for (auto& inst : m_installations) {
-        auto keyName = REGKEY_GEODE "\\" REGSUB_INSTALLATIONS + 
-            std::string("\\") + std::to_string(ix);
 
-        wxRegKey instKey(wxRegKey::HKLM, keyName);
-        if (!instKey.Create()) {
-            UHHH_WELP("Unable to create " + keyName + "");
-        }
-        if (!instKey.SetValue(REGVAL_INSTPATH, inst.m_path.wstring())) {
-            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTPATH);
-        }
-        if (!instKey.SetValue(REGVAL_INSTEXE, inst.m_exe)) {
-            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTEXE);
-        }
-        if (!instKey.SetValue(REGVAL_INSTVERSION, inst.m_version)) {
-            UHHH_WELP("Unable to save " + keyName + "\\" REGVAL_INSTVERSION);
-        }
-        ix++;
+    for (auto x : m_installations) {
+        nlohmann::json inst;
+        inst["path"] = x.m_path.string();
+        inst["executable"] = x.m_exe;
+        inst["version"] = x.m_version;
+        config["installations"].push_back(inst);
     }
-    #elif defined(__APPLE__)
-        if (!ghc::filesystem::exists("/Users/Shared/Geode/"))
-            ghc::filesystem::create_directories("/Users/Shared/Geode/");
 
-        std::ofstream ofs("/Users/Shared/Geode/config.json");
-
-        nlohmann::json config;
-        config["has-sdk"] = m_sdkInstalled;
-
-        if (m_installations.size())
-            config["default-installation"] = m_defaultInstallation;
-
-        for (auto x : m_installations) {
-            nlohmann::json inst;
-            inst["path"] = x.m_path;
-            inst["executable"] = x.m_exe;
-            inst["version"] = x.m_version;
-            config["installations"].push_back(inst);
-        }
-
-        ofs << config.dump(4); 
-        ofs.close();
-    #endif
+    ofs << config.dump(4); 
+    ofs.close();
 
     return Ok();
 }
 
 Result<> Manager::deleteData() {
-    #ifdef _WIN32
-    wxRegKey key(wxRegKey::HKLM, REGKEY_GEODE);
-    if (!key.DeleteSelf()) {
-        return Err("Unable to delete registry key");
+    if (ghc::filesystem::remove(m_dataDirectory)) {
+        return Err("Unable to delete data");
     }
-    #else
-    ghc::filesystem::remove("/Users/Shared/Geode/config.json");
-    #endif
-
     return Ok();
 }
 
@@ -562,7 +475,7 @@ Result<> Manager::deleteData() {
 Result<> Manager::installCLI(
     ghc::filesystem::path const& cliZipPath
 ) {
-    auto targetDir = m_sdkDirectory / "bin";
+    auto targetDir = m_binDirectory;
     if (
         !ghc::filesystem::exists(targetDir) &&
         !ghc::filesystem::create_directories(targetDir)
@@ -579,7 +492,7 @@ Result<> Manager::addCLIToPath() {
     if (!key.QueryValue("Path", path)) {
         return Err("Unable to read Path environment variable");
     }
-    auto toAdd = (m_sdkDirectory / "bin").wstring() + ";";
+    auto toAdd = m_binDirectory.wstring() + ";";
     if (path.Contains(toAdd)) {
         return Ok();
     }
@@ -603,7 +516,7 @@ Result<> Manager::addCLIToPath() {
     #endif
 }
 
-Result<> Manager::installSDK(
+Result<> Manager::installSuite(
     DevBranch branch,
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
@@ -611,14 +524,14 @@ Result<> Manager::installSDK(
 ) {
     #ifdef _WIN32
 
-    if (!ghc::filesystem::exists(m_sdkDirectory / "bin" / "geodeutils.dll")) {
-        return Err("Geode CLI seems to not have been installed!");
+    if (!ghc::filesystem::exists(m_binDirectory / "geodeutils.dll")) {
+        return Err("Geode CLI seems to not have been installed");
     }
 
     #else
 
-    if (!ghc::filesystem::exists(m_sdkDirectory / "bin" / "libgeodeutils.dylib")) {
-        return Err("Geode CLI seems to not have been installed!");
+    if (!ghc::filesystem::exists(m_binDirectory / "libgeodeutils.dylib")) {
+        return Err("Geode CLI seems to not have been installed");
     }
 
     #endif
@@ -636,14 +549,12 @@ Result<> Manager::installSDK(
             ));
         };
 
-        auto suiteDir = m_sdkDirectory / "suite";
-
         using SuiteProgressCallback = void(__stdcall*)(const char*, int);
         using geode_install_suite = const char*(__cdecl*)(const char*, bool, SuiteProgressCallback);
 
         #if _WIN32
 
-        auto lib = LoadLibraryW((m_sdkDirectory / "bin" / "geodeutils.dll").wstring().c_str());
+        auto lib = LoadLibraryW((m_binDirectory / "geodeutils.dll").wstring().c_str());
         if (!lib) {
             throwError("Unable to load library");
             return;
@@ -657,7 +568,7 @@ Result<> Manager::installSDK(
 
         #else
 
-        auto lib = dlopen((m_sdkDirectory / "bin" / "libgeodeutils.dylib").string().c_str(), RTLD_LAZY);
+        auto lib = dlopen((m_binDirectory / "libgeodeutils.dylib").string().c_str(), RTLD_LAZY);
         if (!lib) {
             throwError("Unable to load library");
         }
@@ -671,10 +582,10 @@ Result<> Manager::installSDK(
         #endif
 
         if (
-            !ghc::filesystem::exists(suiteDir) &&
-            !ghc::filesystem::create_directories(suiteDir)
+            !ghc::filesystem::exists(m_suiteDirectory) &&
+            !ghc::filesystem::create_directories(m_suiteDirectory)
         ) {
-            throwError("Unable to create directory at " + suiteDir.string());
+            throwError("Unable to create directory at " + m_suiteDirectory.string());
             return;
         }
 
@@ -682,7 +593,7 @@ Result<> Manager::installSDK(
         progFunc = progressFunc;
 
         auto res = installSuite(
-            suiteDir.string().c_str(),
+            m_suiteDirectory.string().c_str(),
             branch == DevBranch::Nightly,
             [](const char* status, int per) -> void {
                 // limit window update rate
@@ -705,7 +616,8 @@ Result<> Manager::installSDK(
         } else {
             wxQueueEvent(Manager::get(), new CallOnMainEvent(
                 [this, finishFunc]() -> void {
-                    this->finishSDKInstallation();
+                    m_suiteInstalled = true;
+                    this->addSuiteEnv();
                     if (finishFunc) finishFunc();
                 },
                 CALL_ON_MAIN,
@@ -717,27 +629,24 @@ Result<> Manager::installSDK(
     return Ok();
 }
 
-bool Manager::isSDKInstalled() const {
-    return m_sdkInstalled;
+bool Manager::isSuiteInstalled() const {
+    return m_suiteInstalled;
 }
 
-Result<> Manager::uninstallSDK() {
+Result<> Manager::uninstallSuite() {
     if (
-        ghc::filesystem::exists(m_sdkDirectory) &&
-        !ghc::filesystem::remove_all(m_sdkDirectory)
+        ghc::filesystem::exists(m_suiteDirectory) &&
+        !ghc::filesystem::remove_all(m_suiteDirectory)
     ) {
-        return Err("Unable to delete the GeodeSDK directory");
+        return Err("Unable to delete the Geode Suite directory");
     }
     #ifdef _WIN32
     wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
-    if (!key.DeleteValue(ENVVAR_SDK)) {
-        return Err("Unable to delete " ENVVAR_SDK " environment variable");
-    }
     wxString path;
     if (!key.QueryValue("Path", path)) {
         return Err("Unable to read Path environment variable");
     }
-    auto toRemove = (m_sdkDirectory / "bin").wstring() + ";";
+    auto toRemove = (m_binDirectory).wstring() + ";";
     path.Replace(toRemove, "");
     if (!key.SetValue("Path", path)) {
         return Err("Unable to save Path environment variable");
@@ -982,4 +891,28 @@ void Manager::launch(ghc::filesystem::path const& path) {
             wxICON_ERROR
         );
     }
+}
+
+bool Manager::needRequestAdminPriviledges() const {
+    #ifdef _WIN32
+
+    auto ret = true;
+    HANDLE token = nullptr;
+    if (OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+        TOKEN_ELEVATION Elevation;
+        DWORD cbSize = sizeof( TOKEN_ELEVATION );
+        if (GetTokenInformation(token, TokenElevation, &Elevation, sizeof(Elevation), &cbSize)) {
+            ret = !Elevation.TokenIsElevated;
+        }
+    }
+    if (token) {
+        CloseHandle(token);
+    }
+    return ret;
+
+    #else
+    
+    return false;
+
+    #endif
 }

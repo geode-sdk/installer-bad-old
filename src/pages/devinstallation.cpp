@@ -17,7 +17,7 @@ protected:
             m_pathInput->GetValue().ToStdWstring()
         );
         m_path = path;
-        Manager::get()->setSDKDirectory(path);
+        Manager::get()->setSuiteDirectory(path);
     }
 
     void onBrowse(wxCommandEvent&) {
@@ -47,7 +47,7 @@ public:
         this->addText("Please select where to install the Geode SDK.");
 
         m_pathInput = this->addInput(
-            Manager::get()->getSDKDirectory().wstring(),
+            Manager::get()->getSuiteDirectory().wstring(),
             &PageDevInstallSelectSDK::onText
         );
 
@@ -168,7 +168,7 @@ protected:
                         wxICON_ERROR
                     );
                 } else {
-                    auto res = Manager::get()->installSDK(
+                    auto res = Manager::get()->installSuite(
                         GET_EARLIER_PAGE(DevInstallBranch)->getBranch(),
                         [this](std::string const& err) -> void {
                             wxMessageBox(
@@ -182,7 +182,7 @@ protected:
                         },
                         [this](std::string const& text, int prog) -> void {
                             m_gauge->SetValue(prog);
-                            this->setText(m_status, "Cloning SDK: " + text);
+                            this->setText(m_status, "Installing SDK: " + text);
                         },
                         [this]() -> void {
                             if (GET_EARLIER_PAGE(DevInstallAddToPath)->shouldAddToPath()) {

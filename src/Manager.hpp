@@ -84,11 +84,13 @@ public:
 
 class Manager : public wxEvtHandler {
 protected:
-    ghc::filesystem::path m_sdkDirectory;
+    ghc::filesystem::path m_dataDirectory;
+    ghc::filesystem::path m_suiteDirectory;
+    ghc::filesystem::path m_binDirectory;
     std::vector<Installation> m_installations;
     size_t m_defaultInstallation;
     bool m_dataLoaded = false;
-    bool m_sdkInstalled = false;
+    bool m_suiteInstalled = false;
     InstallerMode m_mode = InstallerMode::Normal;
     ghc::filesystem::path m_loaderUpdatePath;
 
@@ -104,9 +106,9 @@ protected:
         ghc::filesystem::path const& zip,
         ghc::filesystem::path const& to
     );
+    Result<> addSuiteEnv();
  
     void onSyncThreadCall(CallOnMainEvent&);
-    Result<> finishSDKInstallation();
 
     void addInstallation(Installation const& inst);
 
@@ -119,9 +121,17 @@ public:
     ghc::filesystem::path const& getLoaderUpdatePath() const;
 
     bool isFirstTime() const;
-    ghc::filesystem::path const& getSDKDirectory() const;
-    void setSDKDirectory(ghc::filesystem::path const&);
-    ghc::filesystem::path getDefaultSDKDirectory() const;
+
+    ghc::filesystem::path const& getDataDirectory() const;
+    ghc::filesystem::path getDefaultDataDirectory() const;
+
+    ghc::filesystem::path const& getBinDirectory() const;
+    ghc::filesystem::path getDefaultBinDirectory() const;
+
+    ghc::filesystem::path const& getSuiteDirectory() const;
+    void setSuiteDirectory(ghc::filesystem::path const&);
+    ghc::filesystem::path getDefaultSuiteDirectory() const;
+
     std::vector<Installation> const& getInstallations() const;
     size_t getDefaultInstallation() const;
 
@@ -138,14 +148,14 @@ public:
         ghc::filesystem::path const& cliZipPath
     );
     Result<> addCLIToPath();
-    Result<> installSDK(
+    Result<> installSuite(
         DevBranch branch, 
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
         CloneFinishFunc finishFunc
     );
-    bool isSDKInstalled() const;
-    Result<> uninstallSDK();
+    bool isSuiteInstalled() const;
+    Result<> uninstallSuite();
 
     void downloadLoader(
         DownloadErrorFunc errorFunc,
@@ -170,6 +180,8 @@ public:
     );
     Result<> uninstallFrom(Installation const& installation);
     Result<> deleteSaveDataFrom(Installation const& installation);
+
+    bool needRequestAdminPriviledges() const;
 
     void launch(ghc::filesystem::path const& path);
 
