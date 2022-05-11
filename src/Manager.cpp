@@ -465,8 +465,12 @@ Result<> Manager::saveData() {
 }
 
 Result<> Manager::deleteData() {
-    if (ghc::filesystem::remove(m_dataDirectory)) {
-        return Err("Unable to delete data");
+    try {
+        if (!ghc::filesystem::remove_all(m_dataDirectory)) {
+            return Err("Unable to delete data");
+        }
+    } catch(std::exception& e) {
+        return Err("Error deleting data: " + std::string(e.what()));
     }
     return Ok();
 }
@@ -634,11 +638,15 @@ bool Manager::isSuiteInstalled() const {
 }
 
 Result<> Manager::uninstallSuite() {
-    if (
-        ghc::filesystem::exists(m_suiteDirectory) &&
-        !ghc::filesystem::remove_all(m_suiteDirectory)
-    ) {
-        return Err("Unable to delete the Geode Suite directory");
+    try {
+        if (
+            ghc::filesystem::exists(m_suiteDirectory) &&
+            !ghc::filesystem::remove_all(m_suiteDirectory)
+        ) {
+            return Err("Unable to delete the Geode Suite directory");
+        }
+    } catch(std::exception& e) {
+        return Err("Error deleting data: " + std::string(e.what()));
     }
     #ifdef _WIN32
     wxRegKey key(wxRegKey::HKLM, "System\\CurrentControlSet\\Control\\Session Manager\\Environment");
