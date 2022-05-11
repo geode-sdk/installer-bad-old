@@ -423,7 +423,9 @@ Result<> Manager::loadData() {
             Installation inst;
             inst.m_path = std::string(install["path"]);
             inst.m_exe = std::string(install["executable"]);
-            inst.m_version = std::string(install["version"]);
+            if (install.contains("version")) {
+                inst.m_version = std::string(install["version"]);
+            }
             this->addInstallation(inst);
         }
 
