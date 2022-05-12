@@ -4,7 +4,6 @@
 #include <wx/zipstrm.h>
 #include <wx/wfstream.h>
 #include <wx/stdpaths.h>
-#include "include/json.hpp"
 #include <thread>
 #include <chrono>
 #include <algorithm>
@@ -538,6 +537,7 @@ Result<> Manager::loadData() {
 
     try {
         auto json = nlohmann::json::parse(std::string(x));
+        m_loadedConfigJson = json;
 
         for (auto install : json["installations"]) {
             Installation inst;
@@ -563,20 +563,19 @@ Result<> Manager::saveData() {
 
     std::ofstream ofs(m_dataDirectory / INSTALL_DATA_JSON);
 
-    nlohmann::json config;
-
     if (m_installations.size()) {
-        config["default-installation"] = m_defaultInstallation;
+        m_loadedConfigJson["default-installation"] = m_defaultInstallation;
     }
 
+    m_loadedConfigJson["installations"] = nlohmann::json::array();
     for (auto x : m_installations) {
         nlohmann::json inst;
         inst["path"] = x.m_path.string();
         inst["executable"] = x.m_exe;
-        config["installations"].push_back(inst);
+        m_loadedConfigJson["installations"].push_back(inst);
     }
 
-    ofs << config.dump(4); 
+    ofs << m_loadedConfigJson.dump(4); 
     ofs.close();
 
     return Ok();

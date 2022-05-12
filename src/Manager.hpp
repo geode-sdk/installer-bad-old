@@ -9,6 +9,7 @@
 #include <wx/webrequest.h>
 #include <functional>
 #include "include/VersionInfo.hpp"
+#include "include/json.hpp"
 
 /**
  * Represents an installation of Geode 
@@ -87,6 +88,7 @@ protected:
     bool m_suiteInstalled = false;
     InstallerMode m_mode = InstallerMode::Normal;
     ghc::filesystem::path m_loaderUpdatePath;
+    nlohmann::json m_loadedConfigJson;
 
     void webRequest(
         std::string const& url,
