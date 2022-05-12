@@ -8,6 +8,7 @@
 
 enum class InstallType {
     Install,
+    Manage,
     InstallOnGDPS,
     InstallDevTools,
     Uninstall,

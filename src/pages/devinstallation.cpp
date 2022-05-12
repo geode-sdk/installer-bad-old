@@ -155,7 +155,7 @@ protected:
                 this->setText(m_status, "Downloading Geode CLI: " + text);
                 m_gauge->SetValue(prog);
             },
-            [this](wxWebResponse const& wres, auto) -> void {
+            [this](wxWebResponse const& wres) -> void {
                 auto installRes = Manager::get()->installCLI(
                     wres.GetDataFile().ToStdWstring()
                 );

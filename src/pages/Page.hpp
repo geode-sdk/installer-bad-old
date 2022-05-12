@@ -18,6 +18,11 @@ enum class PageID {
     Install,
     InstallFinished,
 
+    ManageSelect,
+    ManageCheck,
+    ManageUpdate,
+    ManageFinished,
+
     DevInstallSelectSDK,
     DevInstallBranch,
     DevInstallAddToPath,
@@ -52,6 +57,7 @@ protected:
     wxTextCtrl* addLongText(wxString const& text);
     wxGauge* addProgressBar();
     void addSelect(std::initializer_list<wxString> const& select);
+    void addSelectWithIDs(std::initializer_list<std::pair<wxString, size_t>> const& select);
     template<class Class>
     wxTextCtrl* addInput(wxString const& text, void(Class::*func)(wxCommandEvent&)) {
         auto input = new wxTextCtrl(this, wxID_ANY, text);

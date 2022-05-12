@@ -55,7 +55,21 @@ wxGauge* Page::addProgressBar() {
 void Page::addSelect(std::initializer_list<wxString> const& select) {
     size_t ix = 0;
     for (auto& s : select) {
-        auto gdps = new wxRadioButton(this, ix,
+        auto gdps = new wxRadioButton(
+            this, ix,
+            s, wxDefaultPosition, wxDefaultSize, (!ix ? wxRB_GROUP : 0)
+        );
+        gdps->Bind(wxEVT_RADIOBUTTON, &Page::onSelect, this);
+        m_sizer->Add(gdps, 0, wxALL, 10);
+        ix++;
+    }
+}
+
+void Page::addSelectWithIDs(std::initializer_list<std::pair<wxString, size_t>> const& select) {
+    size_t ix = 0;
+    for (auto& [s, id] : select) {
+        auto gdps = new wxRadioButton(
+            this, id,
             s, wxDefaultPosition, wxDefaultSize, (!ix ? wxRB_GROUP : 0)
         );
         gdps->Bind(wxEVT_RADIOBUTTON, &Page::onSelect, this);

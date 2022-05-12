@@ -161,6 +161,15 @@ void MainFrame::selectPageStructure(InstallType type) {
             };
         } break;
 
+        case InstallType::Manage: {
+            m_structure = {
+                PageID::ManageSelect,
+                PageID::ManageCheck,
+                PageID::ManageUpdate,
+                PageID::ManageFinished,
+            };
+        } break;
+
         case InstallType::InstallOnGDPS: {
             m_structure = {
                 PageID::InstallGDPSInfo,
@@ -217,12 +226,11 @@ void MainFrame::loaderUpdateWindow() {
             gauge->SetValue(prog);
             label->SetLabel("Updating loader: " + info);
         },
-        [this, gauge](wxWebResponse const& res, std::string const& version) -> void {
+        [this, gauge](wxWebResponse const& res) -> void {
             gauge->SetValue(100);
             auto installRes = Manager::get()->installLoaderFor(
                 Manager::get()->getLoaderUpdatePath(),
-                res.GetDataFile().ToStdWstring(),
-                version
+                res.GetDataFile().ToStdWstring()
             );
             if (!installRes) {
                 wxMessageBox(

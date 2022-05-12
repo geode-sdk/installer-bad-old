@@ -8,6 +8,7 @@
 #include <optional>
 #include <wx/webrequest.h>
 #include <functional>
+#include "include/VersionInfo.hpp"
 
 /**
  * Represents an installation of Geode 
@@ -25,14 +26,6 @@ struct Installation {
      * Windows.
      */
     wxString m_exe;
-    /**
-     * Installed version
-     */
-    wxString m_version;
-    /**
-     * Installed version
-     */
-    wxString m_apiVersion;
 
     inline bool operator<(Installation const& other) const {
         return m_path < other.m_path;
@@ -62,8 +55,9 @@ enum class InstallerMode {
 
 using DownloadErrorFunc = std::function<void(std::string const&)>;
 using DownloadProgressFunc = std::function<void(std::string const&, int)>;
-using DownloadFinishFunc = std::function<void(wxWebResponse const&, std::string const&)>;
+using DownloadFinishFunc = std::function<void(wxWebResponse const&)>;
 using CloneFinishFunc = std::function<void()>;
+using UpdateCheckFinishFunc = std::function<void(VersionInfo const&, VersionInfo const&)>;
 
 class GeodeInstallerApp;
 
@@ -96,7 +90,6 @@ protected:
 
     void webRequest(
         std::string const& url,
-        std::string const& version,
         bool downloadFile,
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
@@ -149,13 +142,23 @@ public:
     );
     Result<> addCLIToPath();
     Result<> installSuite(
-        DevBranch branch, 
+        DevBranch branch,
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
         CloneFinishFunc finishFunc
     );
     bool isSuiteInstalled() const;
     Result<> uninstallSuite();
+
+    void checkForUpdates(
+        Installation const& installation,
+        DownloadErrorFunc errorFunc,
+        UpdateCheckFinishFunc finishFunc
+    );
+    void checkCLIForUpdates(
+        DownloadErrorFunc errorFunc,
+        UpdateCheckFinishFunc finishFunc
+    );
 
     void downloadLoader(
         DownloadErrorFunc errorFunc,
@@ -170,8 +173,7 @@ public:
 
     Result<Installation> installLoaderFor(
         ghc::filesystem::path const& gdExePath,
-        ghc::filesystem::path const& zipLocation,
-        std::string const& version
+        ghc::filesystem::path const& zipLocation
     );
     Result<> installAPIFor(
         Installation const& installation,

@@ -188,11 +188,10 @@ protected:
                 this->setText(m_status, "Downloading Geode: " + text);
                 m_gauge->SetValue(prog / 2);
             },
-            [this](wxWebResponse const& res, std::string const& version) -> void {
+            [this](wxWebResponse const& res) -> void {
                 auto installRes = Manager::get()->installLoaderFor(
                     GET_EARLIER_PAGE(InstallSelectGD)->getPath(),
-                    res.GetDataFile().ToStdWstring(),
-                    version
+                    res.GetDataFile().ToStdWstring()
                 );
                 if (!installRes) {
                     wxMessageBox(
@@ -219,7 +218,7 @@ protected:
                             this->setText(m_status, "Downloading API: " + text);
                             m_gauge->SetValue(prog / 2 + 50);
                         },
-                        [this, installation](wxWebResponse const& res, std::string const& version) -> void {
+                        [this, installation](wxWebResponse const& res) -> void {
                             auto apiInstallRes = Manager::get()->installAPIFor(
                                 installation,
                                 res.GetDataFile().ToStdWstring(),

@@ -91,7 +91,6 @@ ghc::filesystem::path const& Manager::getLoaderUpdatePath() const {
 
 void Manager::webRequest(
     std::string const& url,
-    std::string const& version,
     bool downloadFile,
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
@@ -107,7 +106,7 @@ void Manager::webRequest(
     }
     this->Bind(
         wxEVT_WEBREQUEST_STATE,
-        [version, errorFunc, progressFunc, finishFunc](wxWebRequestEvent& evt) -> void {
+        [errorFunc, progressFunc, finishFunc](wxWebRequestEvent& evt) -> void {
         switch (evt.GetState()) {
             case wxWebRequest::State_Completed: {
                 auto res = evt.GetResponse();
@@ -119,7 +118,7 @@ void Manager::webRequest(
                     if (!errorFunc) return;
                     return errorFunc("Web request returned " + std::to_string(res.GetStatus()));
                 }
-                if (finishFunc) finishFunc(res, version);
+                if (finishFunc) finishFunc(res);
             } break;
 
             case wxWebRequest::State_Active: {
@@ -210,12 +209,11 @@ void Manager::downloadLoader(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/loader/releases/latest",
-        "",
         false,
         errorFunc,
         nullptr,
         [this, errorFunc, progressFunc, finishFunc](
-            wxWebResponse const& res, std::string const&
+            wxWebResponse const& res
         ) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
@@ -228,7 +226,6 @@ void Manager::downloadLoader(
                     if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
-                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -255,11 +252,10 @@ void Manager::downloadAPI(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/api/releases/latest",
-        "",
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res, auto) -> void {
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
 
@@ -271,7 +267,6 @@ void Manager::downloadAPI(
                     if (name.find(".geode") != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
-                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -298,11 +293,10 @@ void Manager::downloadCLI(
 ) {
     this->webRequest(
         "https://api.github.com/repos/geode-sdk/cli/releases/latest",
-        "",
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res, auto) -> void {
+        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
 
@@ -314,7 +308,6 @@ void Manager::downloadCLI(
                     if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
                         return this->webRequest(
                             asset["browser_download_url"].get<std::string>(),
-                            tagName,
                             true,
                             errorFunc,
                             progressFunc,
@@ -325,6 +318,133 @@ void Manager::downloadCLI(
                 if (errorFunc) {
                     errorFunc("No release asset for " PLATFORM_NAME " found");
                 }
+            } catch(std::exception& e) {
+                if (errorFunc) {
+                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
+                }
+            }
+        }
+    );
+}
+
+void Manager::checkForUpdates(
+    Installation const& installation,
+    DownloadErrorFunc errorFunc,
+    UpdateCheckFinishFunc finishFunc
+) {
+    auto installedVersion = VersionInfo(0, 0, 0);
+
+    #ifdef _WIN32
+    auto exe = (installation.m_path / "Geode.dll").wstring();
+
+    DWORD verHandle = 0;
+    unsigned int size = 0;
+    LPBYTE lpBuffer = nullptr;
+    auto verSize = GetFileVersionInfoSizeW(
+        exe.c_str(),
+        &verHandle
+    );
+
+    if (verSize != 0) {
+        auto verData = new char[verSize];
+        if (GetFileVersionInfo(exe.c_str(), verHandle, verSize, verData)) {
+            if (VerQueryValue(verData, L"\\", (VOID FAR* FAR*)&lpBuffer, &size)) {
+                if (size) {
+                    VS_FIXEDFILEINFO *verInfo = (VS_FIXEDFILEINFO *)lpBuffer;
+                    if (verInfo->dwSignature == 0xfeef04bd) {
+                        installedVersion = {
+                            ( verInfo->dwFileVersionMS >> 16 ) & 0xffff,
+                            ( verInfo->dwFileVersionMS >>  0 ) & 0xffff,
+                            ( verInfo->dwFileVersionLS >> 16 ) & 0xffff
+                        };
+                    }
+                }
+            }
+        }
+        delete[] verData;
+    }
+    #else
+    return finishFunc(
+        installedVersion,
+        { 0, 0, 0 }
+    );
+    #endif
+
+    this->webRequest(
+        "https://api.github.com/repos/geode-sdk/loader/releases/latest",
+        false,
+        errorFunc,
+        nullptr,
+        [this, errorFunc, finishFunc, installedVersion](
+            wxWebResponse const& res
+        ) -> void {
+            try {
+                auto json = nlohmann::json::parse(res.AsString());
+                auto availableVersion = VersionInfo(json["tag_name"].get<std::string>());
+                finishFunc(installedVersion, availableVersion);
+            } catch(std::exception& e) {
+                if (errorFunc) {
+                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
+                }
+            }
+        }
+    );
+}
+
+void Manager::checkCLIForUpdates(
+    DownloadErrorFunc errorFunc,
+    UpdateCheckFinishFunc finishFunc
+) {
+    auto installedVersion = VersionInfo(0, 0, 0);
+
+    #ifdef _WIN32
+    auto exe = (m_binDirectory / "Geode.exe").wstring();
+
+    DWORD verHandle = 0;
+    unsigned int size = 0;
+    LPBYTE lpBuffer = nullptr;
+    auto verSize = GetFileVersionInfoSizeW(
+        exe.c_str(),
+        &verHandle
+    );
+
+    if (verSize != 0) {
+        auto verData = new char[verSize];
+        if (GetFileVersionInfo(exe.c_str(), verHandle, verSize, verData)) {
+            if (VerQueryValue(verData, L"\\", (VOID FAR* FAR*)&lpBuffer, &size)) {
+                if (size) {
+                    VS_FIXEDFILEINFO *verInfo = (VS_FIXEDFILEINFO *)lpBuffer;
+                    if (verInfo->dwSignature == 0xfeef04bd) {
+                        installedVersion = {
+                            ( verInfo->dwFileVersionMS >> 16 ) & 0xffff,
+                            ( verInfo->dwFileVersionMS >>  0 ) & 0xffff,
+                            ( verInfo->dwFileVersionLS >> 16 ) & 0xffff
+                        };
+                    }
+                }
+            }
+        }
+        delete[] verData;
+    }
+    #else
+    return finishFunc(
+        installedVersion,
+        { 0, 0, 0 }
+    );
+    #endif
+
+    this->webRequest(
+        "https://api.github.com/repos/geode-sdk/cli/releases/latest",
+        false,
+        errorFunc,
+        nullptr,
+        [this, errorFunc, finishFunc, installedVersion](
+            wxWebResponse const& res
+        ) -> void {
+            try {
+                auto json = nlohmann::json::parse(res.AsString());
+                auto availableVersion = VersionInfo(json["tag_name"].get<std::string>());
+                finishFunc(installedVersion, availableVersion);
             } catch(std::exception& e) {
                 if (errorFunc) {
                     errorFunc("Unable to parse JSON: " + std::string(e.what()));
@@ -423,9 +543,6 @@ Result<> Manager::loadData() {
             Installation inst;
             inst.m_path = std::string(install["path"]);
             inst.m_exe = std::string(install["executable"]);
-            if (install.contains("version")) {
-                inst.m_version = std::string(install["version"]);
-            }
             this->addInstallation(inst);
         }
 
@@ -456,7 +573,6 @@ Result<> Manager::saveData() {
         nlohmann::json inst;
         inst["path"] = x.m_path.string();
         inst["executable"] = x.m_exe;
-        inst["version"] = x.m_version;
         config["installations"].push_back(inst);
     }
 
@@ -679,8 +795,7 @@ Result<> Manager::uninstallSuite() {
 
 Result<Installation> Manager::installLoaderFor(
     ghc::filesystem::path const& gdExePath,
-    ghc::filesystem::path const& zipLocation,
-    std::string const& version
+    ghc::filesystem::path const& zipLocation
 ) {
     Installation inst;
     inst.m_exe = gdExePath.filename().wstring();
@@ -689,7 +804,6 @@ Result<Installation> Manager::installLoaderFor(
     #else
     inst.m_path = gdExePath / "Contents";
     #endif
-    inst.m_version = version;
 
     #ifdef _WIN32
 
