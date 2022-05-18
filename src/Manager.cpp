@@ -651,7 +651,7 @@ Result<> Manager::installSuite(
 }
 
 bool Manager::isSuiteInstalled() const {
-    return m_suiteInstalled;
+    return m_suiteInstalled && ghc::filesystem::exists(m_suiteDirectory);
 }
 
 Result<> Manager::uninstallSuite() {
