@@ -102,16 +102,24 @@ protected:
                 ) -> void {
                     this->setText(
                         m_status,
-                        "Installed version: " + current.toString() + ",\n"
-                        "Available version: " + available.toString()
+                        "Installed version: " + current.toString() + "\n"
+                        "Available version: " + available.toString() + "\n"
+                        "Branch: " +
+                            (GET_EARLIER_PAGE(ManageSelect)->which().m_branch == DevBranch::Nightly ? 
+                            "Nightly" : "Stable")
                     );
                     if (current < available) {
                         this->setText(m_nextInfo, "Press \"Next\" to update Geode.");
-                        m_canContinue = true;
-                        m_frame->updateControls();
                     } else {
-                        this->setText(m_nextInfo, "You are up-to-date! :)");
+                        this->setText(m_nextInfo,
+                            "You are up-to-date! :)\n"
+                            "Press \"Next\" to reinstall Geode anyway, "
+                            "or quit the installer if you don't want to "
+                            "do that."
+                        );
                     }
+                    m_canContinue = true;
+                    m_frame->updateControls();
                 }
             );
         }
@@ -124,6 +132,55 @@ public:
     }
 };
 REGISTER_PAGE(ManageCheck);
+
+/////////////////
+
+class PageManageOptBeta : public Page {
+protected:
+    wxCheckBox* m_check;
+
+    void enter() override {
+        m_skipThis = GET_EARLIER_PAGE(ManageSelect)->updateCLI();
+    }
+
+    void leave() override {
+        m_skipThis = GET_EARLIER_PAGE(ManageSelect)->updateCLI();
+    }
+
+public:
+    PageManageOptBeta(MainFrame* parent) : Page(parent) {
+        if (!GET_EARLIER_PAGE(ManageSelect)->updateCLI()) {
+            auto inst = GET_EARLIER_PAGE(ManageSelect)->which();
+            if (inst.m_branch == DevBranch::Stable) {
+                this->addText(
+                    "Would you like to switch this installation "
+                    "to use the beta version of the Geode loader? "
+                    "Beta versions may be less stable and have "
+                    "more bugs, but using beta versions lets "
+                    "you try out new features ahead of time."
+                );
+                m_check = this->addToggle("Switch to the beta channel");
+            } else {
+                this->addText(
+                    "Would you like to switch this installation "
+                    "to use the stable version of the Geode loader? "
+                    "You are currently using the beta channel, "
+                    "which may be less stable and have more bugs, "
+                    "but using beta versions lets you try out new "
+                    "features ahead of time."
+                );
+                m_check = this->addToggle("Stay on beta channel");
+                m_check->SetValue(true);
+            }
+        }
+        m_canContinue = true;
+    }
+    
+    DevBranch getBranch() const {
+        return m_check->IsChecked() ? DevBranch::Nightly : DevBranch::Stable;
+    }
+};
+REGISTER_PAGE(ManageOptBeta);
 
 /////////////////
 
@@ -167,13 +224,15 @@ protected:
                 }
             );
         } else {
-            Manager::get()->downloadLoader(
+            Manager::get()->installGeodeFor(
+                GET_EARLIER_PAGE(ManageSelect)->which().m_path,
+                DevBranch::Stable,
                 [this](std::string const& str) -> void {
                     wxMessageBox(
                         "Error downloading the Geode loader: " + str + 
                         ". Try again, and if the problem persists, contact "
                         "the Geode Development team for more help.",
-                        "Error Updating",
+                        "Error Installing",
                         wxICON_ERROR
                     );
                     this->setText(m_status, "Error: " + str);
@@ -182,57 +241,8 @@ protected:
                     this->setText(m_status, "Downloading Geode: " + text);
                     m_gauge->SetValue(prog / 2);
                 },
-                [this](wxWebResponse const& res) -> void {
-                    auto installRes = Manager::get()->installLoaderFor(
-                        GET_EARLIER_PAGE(ManageSelect)->which().m_path /
-                        GET_EARLIER_PAGE(ManageSelect)->which().m_exe.ToStdWstring(),
-                        res.GetDataFile().ToStdWstring()
-                    );
-                    if (!installRes) {
-                        wxMessageBox(
-                            "Error updating Geode: " + installRes.error() + ". Try "
-                            "again, and if the problem persists, contact "
-                            "the Geode Development team for more help.",
-                            "Error Updating",
-                            wxICON_ERROR
-                        );
-                    } else {
-                        auto installation = installRes.value();
-                        Manager::get()->downloadAPI(
-                            [this](std::string const& str) -> void {
-                                wxMessageBox(
-                                    "Error downloading the Geode API: " + str + 
-                                    ". Try again, and if the problem persists, contact "
-                                    "the Geode Development team for more help.",
-                                    "Error Updating",
-                                    wxICON_ERROR
-                                );
-                                this->setText(m_status, "Error: " + str);
-                            },
-                            [this](std::string const& text, int prog) -> void {
-                                this->setText(m_status, "Downloading API: " + text);
-                                m_gauge->SetValue(prog / 2 + 50);
-                            },
-                            [this, installation](wxWebResponse const& res) -> void {
-                                auto apiInstallRes = Manager::get()->installAPIFor(
-                                    installation,
-                                    res.GetDataFile().ToStdWstring(),
-                                    res.GetSuggestedFileName()
-                                );
-                                if (!apiInstallRes) {
-                                    wxMessageBox(
-                                        "Error updating Geode API: " + apiInstallRes.error() + ". Try "
-                                        "again, and if the problem persists, contact "
-                                        "the Geode Development team for more help.",
-                                        "Error Updating",
-                                        wxICON_ERROR
-                                    );
-                                } else {
-                                    m_frame->nextPage();
-                                }
-                            }
-                        );
-                    }
+                [this]() -> void {
+                    m_frame->nextPage();
                 }
             );
         }

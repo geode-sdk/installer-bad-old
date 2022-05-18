@@ -46,6 +46,12 @@ wxTextCtrl* Page::addLongText(wxString const& text) {
     return ctrl;
 }
 
+wxCheckBox* Page::addToggle(wxString const& text) {
+    auto btn = new wxCheckBox(this, wxID_ANY, text);
+    m_sizer->Add(btn, 0, wxALL, 10);
+    return btn;
+}
+
 wxGauge* Page::addProgressBar() {
     auto bar = new wxGauge(this, wxID_ANY, 100);
     m_sizer->Add(bar, 0, wxALL | wxEXPAND, 10);

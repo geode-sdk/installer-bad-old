@@ -14,12 +14,14 @@ enum class PageID {
 
     InstallGDPSInfo,
     InstallSelectGD,
+    InstallOptBeta,
     InstallCheckMods,
     Install,
     InstallFinished,
 
     ManageSelect,
     ManageCheck,
+    ManageOptBeta,
     ManageUpdate,
     ManageFinished,
 
@@ -77,10 +79,10 @@ protected:
         }
         return btn;
     }
+    wxCheckBox* addToggle(wxString const& text);
     template<class Class>
     wxCheckBox* addToggle(wxString const& text, void(Class::*func)(wxCommandEvent&), Class* ptr = nullptr) {
-        auto btn = new wxCheckBox(this, wxID_ANY, text);
-        m_sizer->Add(btn, 0, wxALL, 10);
+        auto btn = this->addToggle(text);
         if (func) {
             if (!ptr) ptr = reinterpret_cast<Class*>(this);
             btn->Bind(wxEVT_CHECKBOX, func, ptr);

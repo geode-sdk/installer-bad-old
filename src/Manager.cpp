@@ -201,90 +201,6 @@ Result<> Manager::unzipTo(
     return Ok();
 }
 
-void Manager::downloadLoader(
-    DownloadErrorFunc errorFunc,
-    DownloadProgressFunc progressFunc,
-    DownloadFinishFunc finishFunc
-) {
-    this->webRequest(
-        "https://api.github.com/repos/geode-sdk/loader/releases/latest",
-        false,
-        errorFunc,
-        nullptr,
-        [this, errorFunc, progressFunc, finishFunc](
-            wxWebResponse const& res
-        ) -> void {
-            try {
-                auto json = nlohmann::json::parse(res.AsString());
-
-                auto tagName = json["tag_name"].get<std::string>();
-                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
-
-                for (auto& asset : json["assets"]) {
-                    auto name = asset["name"].get<std::string>();
-                    if (name.find(PLATFORM_ASSET_IDENTIFIER) != std::string::npos) {
-                        return this->webRequest(
-                            asset["browser_download_url"].get<std::string>(),
-                            true,
-                            errorFunc,
-                            progressFunc,
-                            finishFunc
-                        );
-                    }
-                }
-                if (errorFunc) {
-                    errorFunc("No release asset for " PLATFORM_NAME " found");
-                }
-            } catch(std::exception& e) {
-                if (errorFunc) {
-                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
-                }
-            }
-        }
-    );
-}
-
-void Manager::downloadAPI(
-    DownloadErrorFunc errorFunc,
-    DownloadProgressFunc progressFunc,
-    DownloadFinishFunc finishFunc
-) {
-    this->webRequest(
-        "https://api.github.com/repos/geode-sdk/api/releases/latest",
-        false,
-        errorFunc,
-        nullptr,
-        [this, errorFunc, progressFunc, finishFunc](wxWebResponse const& res) -> void {
-            try {
-                auto json = nlohmann::json::parse(res.AsString());
-
-                auto tagName = json["tag_name"].get<std::string>();
-                if (progressFunc) progressFunc("Downloading version " + tagName, 0);
-
-                for (auto& asset : json["assets"]) {
-                    auto name = asset["name"].get<std::string>();
-                    if (name.find(".geode") != std::string::npos) {
-                        return this->webRequest(
-                            asset["browser_download_url"].get<std::string>(),
-                            true,
-                            errorFunc,
-                            progressFunc,
-                            finishFunc
-                        );
-                    }
-                }
-                if (errorFunc) {
-                    errorFunc("No .geode file release asset found");
-                }
-            } catch(std::exception& e) {
-                if (errorFunc) {
-                    errorFunc("Unable to parse JSON: " + std::string(e.what()));
-                }
-            }
-        }
-    );
-}
-
 void Manager::downloadCLI(
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
@@ -543,6 +459,9 @@ Result<> Manager::loadData() {
             Installation inst;
             inst.m_path = std::string(install["path"]);
             inst.m_exe = std::string(install["executable"]);
+            inst.m_branch =
+                install.contains("nightly") && install["nightly"].get<bool>() ?
+                DevBranch::Nightly : DevBranch::Stable;
             this->addInstallation(inst);
         }
 
@@ -572,6 +491,7 @@ Result<> Manager::saveData() {
         nlohmann::json inst;
         inst["path"] = x.m_path.string();
         inst["executable"] = x.m_exe;
+        inst["nightly"] = x.m_branch == DevBranch::Nightly;
         m_loadedConfigJson["installations"].push_back(inst);
     }
 
@@ -637,25 +557,35 @@ Result<> Manager::addCLIToPath() {
     #endif
 }
 
+bool Manager::isGeodeUtilsInstalled() const {
+    #ifdef _WIN32
+    return ghc::filesystem::exists(m_binDirectory / "geodeutils.dll");
+    #else
+    return ghc::filesystem::exists(m_binDirectory / "libgeodeutils.dylib");
+    #endif
+}
+
+void* Manager::loadFunctionFromUtilsLib(const char* name) {
+    #if _WIN32
+    auto lib = LoadLibraryW((m_binDirectory / "geodeutils.dll").wstring().c_str());
+    if (!lib) return nullptr;
+    return GetProcAddress(lib, name);
+    #else
+    auto lib = dlopen((m_binDirectory / "libgeodeutils.dylib").string().c_str(), RTLD_LAZY);
+    if (!lib) return nullptr;
+    return dlsym(lib, name);
+    #endif
+}
+
 Result<> Manager::installSuite(
     DevBranch branch,
     DownloadErrorFunc errorFunc,
     DownloadProgressFunc progressFunc,
     CloneFinishFunc finishFunc
 ) {
-    #ifdef _WIN32
-
-    if (!ghc::filesystem::exists(m_binDirectory / "geodeutils.dll")) {
+    if (!this->isGeodeUtilsInstalled()) {
         return Err("Geode CLI seems to not have been installed");
     }
-
-    #else
-
-    if (!ghc::filesystem::exists(m_binDirectory / "libgeodeutils.dylib")) {
-        return Err("Geode CLI seems to not have been installed");
-    }
-
-    #endif
 
     this->Bind(CALL_ON_MAIN, &Manager::onSyncThreadCall, this);
 
@@ -670,37 +600,7 @@ Result<> Manager::installSuite(
             ));
         };
 
-        using SuiteProgressCallback = void(__stdcall*)(const char*, int);
-        using geode_install_suite = const char*(__cdecl*)(const char*, bool, SuiteProgressCallback);
-
-        #if _WIN32
-
-        auto lib = LoadLibraryW((m_binDirectory / "geodeutils.dll").wstring().c_str());
-        if (!lib) {
-            throwError("Unable to load library");
-            return;
-        }
-
-        auto installSuite = reinterpret_cast<geode_install_suite>(GetProcAddress(lib, "geode_install_suite"));
-        if (!installSuite) {
-            throwError("Unable to locate suite installing function");
-            return;
-        }
-
-        #else
-
-        auto lib = dlopen((m_binDirectory / "libgeodeutils.dylib").string().c_str(), RTLD_LAZY);
-        if (!lib) {
-            throwError("Unable to load library");
-        }
-
-        auto installSuite = reinterpret_cast<geode_install_suite>(dlsym(lib, "geode_install_suite"));
-        if (!installSuite) {
-            throwError("Unable to locate suite installing function");
-            return;
-        }
-
-        #endif
+        auto installSuite = utilsFunc<cli::geode_install_suite>("geode_install_suite");
 
         if (
             !ghc::filesystem::exists(m_suiteDirectory) &&
@@ -792,77 +692,114 @@ Result<> Manager::uninstallSuite() {
 }
 
 
-Result<Installation> Manager::installLoaderFor(
-    ghc::filesystem::path const& gdExePath,
-    ghc::filesystem::path const& zipLocation
+void Manager::installGeodeUtilsLib(
+    bool update,
+    DevBranch branch,
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    CloneFinishFunc finishFunc
 ) {
-    Installation inst;
-    inst.m_exe = gdExePath.filename().wstring();
-    #if _WIN32
-    inst.m_path = gdExePath.parent_path();
-    #else
-    inst.m_path = gdExePath / "Contents";
-    #endif
-
+    if (!update && this->isGeodeUtilsInstalled()) {
+        return finishFunc();
+    }
+    this->webRequest(
     #ifdef _WIN32
-
-    auto ures = this->unzipTo(zipLocation, inst.m_path);
-    if (!ures) {
-        return Err("Loader unzip error: " + ures.error());
-    }
-
-    wxFile appid((inst.m_path / "steam_appid.txt").wstring(), wxFile::write);
-    appid.Write("322170");
-
+    branch == DevBranch::Nightly ? 
+        "https://github.com/geode-sdk/suite/raw/nightly/windows/geodeutils.dll" : 
+        "https://github.com/geode-sdk/suite/raw/main/windows/geodeutils.dll",
     #elif defined(__APPLE__)
-    auto zPath = inst.m_path / "Frameworks";
-    std::cout << "path " << zPath.string() << "\n";
-
-    auto ures = this->unzipTo(zipLocation, zPath);
-    if (!ures) {
-        return Err("Loader unzip error: " + ures.error());
-    }
-
+    branch == DevBranch::Nightly ? 
+        "https://github.com/geode-sdk/suite/raw/nightly/macos/libgeodeutils.dylib" :
+        "https://github.com/geode-sdk/suite/raw/main/macos/libgeodeutils.dylib",
     #else
-    static_assert(false, "Implement installation proper for this platform");
+        #error "Define download URL for geodeutils"
     #endif
-
-    if (!m_installations.size()) {
-        m_defaultInstallation = 0;
-    }
-    this->addInstallation(inst);
-
-    return Ok(inst);
+        true,
+        errorFunc,
+        progressFunc,
+        [this, errorFunc, finishFunc](wxWebResponse const& res) -> void {
+            try {
+                if (
+                    !ghc::filesystem::exists(m_binDirectory) &&
+                    !ghc::filesystem::create_directories(m_binDirectory)
+                ) {
+                    return errorFunc("Unable to create directory at " + m_binDirectory.string());
+                }
+                if (!ghc::filesystem::copy_file(
+                    res.GetDataFile().ToStdWstring(),
+                    m_binDirectory / res.GetSuggestedFileName().ToStdWstring(),
+                    ghc::filesystem::copy_options::overwrite_existing
+                )) {
+                    return errorFunc("Unable to copy geodeutils dll!");
+                }
+                finishFunc();
+            } catch(std::exception& e) {
+                return errorFunc(e.what());
+            }
+        }
+    );
 }
 
-Result<> Manager::installAPIFor(
-    Installation const& inst,
-    ghc::filesystem::path const& zipLocation,
-    wxString const& filename
+Result<> Manager::installGeodeFor(
+    ghc::filesystem::path const& gdExePath,
+    DevBranch branch,
+    DownloadErrorFunc errorFunc,
+    DownloadProgressFunc progressFunc,
+    CloneFinishFunc finishFunc
 ) {
-    auto targetDir = inst.m_path / "geode" / "mods";
+    if (!this->isGeodeUtilsInstalled()) {
+        return Err("Geode Utility Library seems to not have been installed");
+    }
 
-    if (
-        !ghc::filesystem::exists(targetDir) &&
-        !ghc::filesystem::create_directories(targetDir)
-    ) {
-        return Err("Unable to create Geode mods directory under " + targetDir.string());
-    }
-    try {
-        if (!ghc::filesystem::copy_file(
-            zipLocation,
-            targetDir / filename.ToStdWstring(),
-            ghc::filesystem::copy_options::overwrite_existing
-        )) {
-            return Err("Unable to copy Geode API");
+    this->Bind(CALL_ON_MAIN, &Manager::onSyncThreadCall, this);
+
+    std::thread t([this, gdExePath, branch, errorFunc, progressFunc, finishFunc]() -> void {
+        auto throwError = [errorFunc, this](std::string const& msg) -> void {
+            wxQueueEvent(this, new CallOnMainEvent(
+                [errorFunc, msg]() -> void {
+                    if (errorFunc) errorFunc(msg);
+                },
+                CALL_ON_MAIN,
+                wxID_ANY
+            ));
+        };
+
+        auto installGeode = utilsFunc<cli::geode_install_geode>("geode_install_geode");
+
+        static DownloadProgressFunc progFunc;
+        progFunc = progressFunc;
+
+        auto res = installGeode(
+            gdExePath.string().c_str(),
+            branch == DevBranch::Nightly,
+            true,
+            [](const char* status, int per) -> void {
+                wxQueueEvent(Manager::get(), new CallOnMainEvent(
+                    [status, per]() -> void {
+                        if (progFunc) progFunc(status, per);
+                    },
+                    CALL_ON_MAIN,
+                    wxID_ANY
+                ));
+            }
+        );
+        if (res) {
+            throwError(res);
+        } else {
+            wxQueueEvent(Manager::get(), new CallOnMainEvent(
+                [finishFunc]() -> void {
+                    if (finishFunc) finishFunc();
+                },
+                CALL_ON_MAIN,
+                wxID_ANY
+            ));
         }
-    } catch(std::exception& e) {
-        return Err("Unable to copy Geode API: " + std::string(e.what()));
-    }
+    });
+    t.detach();
     return Ok();
 }
 
-Result<> Manager::uninstallFrom(Installation const& inst) {
+Result<> Manager::uninstallGeodeFrom(Installation const& inst) {
     #ifdef _WIN32
 
     ghc::filesystem::path path(inst.m_path);

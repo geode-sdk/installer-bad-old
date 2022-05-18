@@ -11,6 +11,11 @@
 #include "include/VersionInfo.hpp"
 #include "include/json.hpp"
 
+enum class DevBranch : bool {
+    Stable,
+    Nightly,
+};
+
 /**
  * Represents an installation of Geode 
  * on some directory. The identifier of 
@@ -27,6 +32,7 @@ struct Installation {
      * Windows.
      */
     wxString m_exe;
+    DevBranch m_branch;
 
     inline bool operator<(Installation const& other) const {
         return m_path < other.m_path;
@@ -44,11 +50,6 @@ enum OtherModFlags {
     OMF_GDHM = 0b1000,
 };
 
-enum class DevBranch {
-    Stable,
-    Nightly,
-};
-
 enum class InstallerMode {
     Normal,
     UpdateLoader,
@@ -61,6 +62,12 @@ using CloneFinishFunc = std::function<void()>;
 using UpdateCheckFinishFunc = std::function<void(VersionInfo const&, VersionInfo const&)>;
 
 class GeodeInstallerApp;
+
+namespace cli {
+    using ProgressCallback = void(__stdcall*)(const char*, int);
+    using geode_install_geode = const char*(__cdecl*)(const char*, bool, bool, ProgressCallback);
+    using geode_install_suite = const char*(__cdecl*)(const char*, bool, ProgressCallback);
+}
 
 class CallOnMainEvent : public wxEvent {
 protected:
@@ -89,6 +96,12 @@ protected:
     InstallerMode m_mode = InstallerMode::Normal;
     ghc::filesystem::path m_loaderUpdatePath;
     nlohmann::json m_loadedConfigJson;
+
+    void* loadFunctionFromUtilsLib(const char* name);
+    template<typename Func>
+    Func utilsFunc(const char* name) {
+        return reinterpret_cast<Func>(this->loadFunctionFromUtilsLib(name));
+    }
 
     void webRequest(
         std::string const& url,
@@ -162,27 +175,23 @@ public:
         UpdateCheckFinishFunc finishFunc
     );
 
-    void downloadLoader(
+    void installGeodeUtilsLib(
+        bool update,
+        DevBranch branch,
         DownloadErrorFunc errorFunc,
         DownloadProgressFunc progressFunc,
-        DownloadFinishFunc finishFunc
+        CloneFinishFunc finishFunc
     );
-    void downloadAPI(
-        DownloadErrorFunc errorFunc,
-        DownloadProgressFunc progressFunc,
-        DownloadFinishFunc finishFunc
-    );
+    bool isGeodeUtilsInstalled() const;
 
-    Result<Installation> installLoaderFor(
+    Result<> installGeodeFor(
         ghc::filesystem::path const& gdExePath,
-        ghc::filesystem::path const& zipLocation
+        DevBranch branch,
+        DownloadErrorFunc errorFunc,
+        DownloadProgressFunc progressFunc,
+        CloneFinishFunc finishFunc
     );
-    Result<> installAPIFor(
-        Installation const& installation,
-        ghc::filesystem::path const& zipLocation,
-        wxString const& filename
-    );
-    Result<> uninstallFrom(Installation const& installation);
+    Result<> uninstallGeodeFrom(Installation const& installation);
     Result<> deleteSaveDataFrom(Installation const& installation);
 
     bool needRequestAdminPriviledges() const;
@@ -196,6 +205,7 @@ public:
      * On MacOS, this returns IDK.
      */
     std::optional<ghc::filesystem::path> findDefaultGDPath() const;
+
     /**
      * Check if the given directory contains 
      * other external mods.

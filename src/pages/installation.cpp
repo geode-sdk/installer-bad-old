@@ -21,6 +21,7 @@ REGISTER_PAGE(InstallGDPSInfo);
 
 class PageInstallSelectGD : public Page {
 protected:
+    wxStaticText* m_info;
     wxTextCtrl* m_pathInput;
     ghc::filesystem::path m_path;
     
@@ -63,11 +64,40 @@ protected:
         m_canContinue =
             ghc::filesystem::exists(path) &&
             ghc::filesystem::is_regular_file(path);
+        if (!m_canContinue) {
+            this->setText(
+                m_info,
+                "Please enter a path to a valid executable"
+            );
+        }
         #else
         m_canContinue =
             ghc::filesystem::exists(path) &&
             ghc::filesystem::is_directory(path);
+        if (!m_canContinue) {
+            this->setText(
+                m_info,
+                "Please enter a path to a valid directory"
+            );
+        }
         #endif
+        auto perms = ghc::filesystem::status(path).permissions();
+        if (
+            (perms & ghc::filesystem::perms::owner_all) == ghc::filesystem::perms::none ||
+            (perms & ghc::filesystem::perms::group_all) == ghc::filesystem::perms::none
+        ) {
+            this->setText(
+                m_info,
+                "It seems like the installer lacks sufficient "
+                "permissions to write files to the provided "
+                "location; please install GD on another path. "
+                #ifdef _WIN32
+                "(Instructions for Steam: "
+                "https://geode-sdk.github.io/docs/movegd.html)"
+                #endif
+            );
+            m_canContinue = false;
+        }
         m_frame->updateControls();
     }
 
@@ -102,11 +132,38 @@ public:
         m_pathInput = this->addInput(path.wstring(), &PageInstallSelectGD::onText);
 
         this->addButton("Browse", &PageInstallSelectGD::onBrowse);
+
+        m_info = this->addText("");
     }
 
     ghc::filesystem::path getPath() const { return m_path; }
 };
 REGISTER_PAGE(InstallSelectGD);
+
+/////////////////
+
+class PageInstallOptBeta : public Page {
+protected:
+    wxCheckBox* m_check;
+
+public:
+    PageInstallOptBeta(MainFrame* parent) : Page(parent) {
+        this->addText(
+            "Would you like to use the beta version "
+            "(nightly channel) of the Geode loader? "
+            "Beta versions may be less stable and have "
+            "more bugs, but using beta versions lets "
+            "you try out new features ahead of time."
+        );
+        m_check = this->addToggle("Use beta version for Loader");
+        m_canContinue = true;
+    }
+    
+    DevBranch getBranch() const {
+        return m_check->IsChecked() ? DevBranch::Nightly : DevBranch::Stable;
+    }
+};
+REGISTER_PAGE(InstallOptBeta);
 
 /////////////////
 
@@ -173,10 +230,12 @@ protected:
     wxGauge* m_gauge;
 
     void enter() override {
-        Manager::get()->downloadLoader(
+        Manager::get()->installGeodeUtilsLib(
+            false,
+            GET_EARLIER_PAGE(InstallOptBeta)->getBranch(),
             [this](std::string const& str) -> void {
                 wxMessageBox(
-                    "Error downloading the Geode loader: " + str + 
+                    "Error downloading the Geode Utility Library: " + str + 
                     ". Try again, and if the problem persists, contact "
                     "the Geode Development team for more help.",
                     "Error Installing",
@@ -185,58 +244,42 @@ protected:
                 this->setText(m_status, "Error: " + str);
             },
             [this](std::string const& text, int prog) -> void {
-                this->setText(m_status, "Downloading Geode: " + text);
+                this->setText(m_status, "Downloading Geode Utility Library: " + text);
                 m_gauge->SetValue(prog / 2);
             },
-            [this](wxWebResponse const& res) -> void {
-                auto installRes = Manager::get()->installLoaderFor(
+            [this]() -> void {
+                this->setText(m_status, "Waiting to download Geode...");
+                m_gauge->SetValue(50);
+                auto res = Manager::get()->installGeodeFor(
                     GET_EARLIER_PAGE(InstallSelectGD)->getPath(),
-                    res.GetDataFile().ToStdWstring()
+                    GET_EARLIER_PAGE(InstallOptBeta)->getBranch(),
+                    [this](std::string const& str) -> void {
+                        wxMessageBox(
+                            "Error downloading the Geode loader: " + str + 
+                            ". Try again, and if the problem persists, contact "
+                            "the Geode Development team for more help.",
+                            "Error Installing",
+                            wxICON_ERROR
+                        );
+                        this->setText(m_status, "Error: " + str);
+                    },
+                    [this](std::string const& text, int prog) -> void {
+                        this->setText(m_status, "Downloading Geode: " + text);
+                        m_gauge->SetValue(prog / 2 + 50);
+                    },
+                    [this]() -> void {
+                        m_frame->nextPage();
+                    }
                 );
-                if (!installRes) {
+                if (!res) {
                     wxMessageBox(
-                        "Error installing Geode: " + installRes.error() + ". Try "
-                        "again, and if the problem persists, contact "
+                        "Error downloading the Geode loader: " + res.error() + 
+                        ". Try again, and if the problem persists, contact "
                         "the Geode Development team for more help.",
                         "Error Installing",
                         wxICON_ERROR
                     );
-                } else {
-                    auto installation = installRes.value();
-                    Manager::get()->downloadAPI(
-                        [this](std::string const& str) -> void {
-                            wxMessageBox(
-                                "Error downloading the Geode API: " + str + 
-                                ". Try again, and if the problem persists, contact "
-                                "the Geode Development team for more help.",
-                                "Error Installing",
-                                wxICON_ERROR
-                            );
-                            this->setText(m_status, "Error: " + str);
-                        },
-                        [this](std::string const& text, int prog) -> void {
-                            this->setText(m_status, "Downloading API: " + text);
-                            m_gauge->SetValue(prog / 2 + 50);
-                        },
-                        [this, installation](wxWebResponse const& res) -> void {
-                            auto apiInstallRes = Manager::get()->installAPIFor(
-                                installation,
-                                res.GetDataFile().ToStdWstring(),
-                                res.GetSuggestedFileName()
-                            );
-                            if (!apiInstallRes) {
-                                wxMessageBox(
-                                    "Error installing Geode API: " + apiInstallRes.error() + ". Try "
-                                    "again, and if the problem persists, contact "
-                                    "the Geode Development team for more help.",
-                                    "Error Installing",
-                                    wxICON_ERROR
-                                );
-                            } else {
-                                m_frame->nextPage();
-                            }
-                        }
-                    );
+                    this->setText(m_status, "Error: " + res.error());
                 }
             }
         );

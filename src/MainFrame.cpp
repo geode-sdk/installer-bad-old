@@ -155,6 +155,7 @@ void MainFrame::selectPageStructure(InstallType type) {
             m_structure = {
                 PageID::EULA,
                 PageID::InstallSelectGD,
+                PageID::InstallOptBeta,
                 PageID::InstallCheckMods,
                 PageID::Install,
                 PageID::InstallFinished,
@@ -204,52 +205,6 @@ void MainFrame::selectPageStructure(InstallType type) {
     }
 }
 
-void MainFrame::loaderUpdateWindow() {
-    auto sizer = new wxBoxSizer(wxVERTICAL);
-
-    auto label = new wxStaticText(this, wxID_ANY, "Updating loader...");
-    sizer->Add(label, 0, wxALL, 10);
-    auto gauge = new wxGauge(this, wxID_ANY, 100);
-    sizer->Add(gauge, 0, wxALL | wxEXPAND, 10);
-
-    Manager::get()->downloadLoader(
-        [](std::string const& error) -> void {
-            wxMessageBox(
-                "Error updating Geode: " + error + ". Try "
-                "again, and if the problem persists, contact "
-                "the Geode Development team for more help.",
-                "Error Updating",
-                wxICON_ERROR
-            );
-        },
-        [label, gauge](std::string const& info, int prog) -> void {
-            gauge->SetValue(prog);
-            label->SetLabel("Updating loader: " + info);
-        },
-        [this, gauge](wxWebResponse const& res) -> void {
-            gauge->SetValue(100);
-            auto installRes = Manager::get()->installLoaderFor(
-                Manager::get()->getLoaderUpdatePath(),
-                res.GetDataFile().ToStdWstring()
-            );
-            if (!installRes) {
-                wxMessageBox(
-                    "Error updating Geode: " + installRes.error() + ". Try "
-                    "again, and if the problem persists, contact "
-                    "the Geode Development team for more help.",
-                    "Error Updating",
-                    wxICON_ERROR
-                );
-            } else {
-                Manager::get()->launch(Manager::get()->getLoaderUpdatePath());
-                this->Close();
-            }
-        }
-    );
-
-    this->SetSizer(sizer);
-}
-
 MainFrame::MainFrame() : wxFrame(
     nullptr,
     wxID_ANY,
@@ -269,8 +224,6 @@ MainFrame::MainFrame() : wxFrame(
         this->SetSize({ 440, 100 });
         this->SetMinSize({ 440, 100 });
         this->SetMaxSize({ 440, 100 });
-
-        this->loaderUpdateWindow();
 
         this->Layout();
     }

@@ -217,7 +217,7 @@ protected:
     void enter() override {
         for (auto& inst : Manager::get()->getInstallations()) {
             if (GET_EARLIER_PAGE(UninstallSelect)->shouldUninstall(inst)) {
-                auto ur = Manager::get()->uninstallFrom(inst);
+                auto ur = Manager::get()->uninstallGeodeFrom(inst);
                 if (!ur) {
                     wxMessageBox(
                         "Unable to uninstall Geode from " + inst.m_path.string() + ": " +
