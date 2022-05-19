@@ -59,47 +59,52 @@ protected:
     }
 
     void updateContinue() {
+        this->setText(m_info, "");
         auto path = ghc::filesystem::path(m_pathInput->GetValue().ToStdWstring());
-        #if _WIN32
-        m_canContinue =
+        #ifdef _WIN32
+        m_canContinue = 
             ghc::filesystem::exists(path) &&
             ghc::filesystem::is_regular_file(path);
-        if (!m_canContinue) {
-            this->setText(
-                m_info,
-                "Please enter a path to a valid executable"
-            );
-        }
         #else
-        m_canContinue =
+        m_canContinue = 
             ghc::filesystem::exists(path) &&
-            ghc::filesystem::is_directory(path) && 
-            ghc::filesystem::exists(path / "Contents" / "Frameworks" / "libfmod.dylib");
-
-
-        if (!m_canContinue) {
-            this->setText(
-                m_info,
-                "Please enter a path to a valid GD application"
-            );
-        }
+            ghc::filesystem::is_directory(path);
         #endif
-        auto perms = ghc::filesystem::status(path).permissions();
-        if (
-            (perms & ghc::filesystem::perms::owner_all) == ghc::filesystem::perms::none ||
-            (perms & ghc::filesystem::perms::group_all) == ghc::filesystem::perms::none
-        ) {
-            this->setText(
-                m_info,
-                "It seems like the installer lacks sufficient "
-                "permissions to write files to the provided "
-                "location; please install GD on another path. "
-                #ifdef _WIN32
-                "(Instructions for Steam: "
-                "https://geode-sdk.github.io/docs/movegd.html)"
-                #endif
-            );
-            m_canContinue = false;
+        if (path.string().size()) {
+            if (!m_canContinue) {
+                this->setText(
+                    m_info,
+                    "Please enter a path to a valid installation "
+                    "of GD 2.113."
+                );
+            }
+            if (!Manager::isValidGD(path)) {
+                this->setText(
+                    m_info,
+                    "This does not seem like a valid installation "
+                    "of GD 2.113. Please note that Geode currently "
+                    "only supports version 2.113; installing may "
+                    "not work, or cause the game to become "
+                    "unplayable."
+                );
+            }
+            auto perms = ghc::filesystem::status(path).permissions();
+            if (
+                (perms & ghc::filesystem::perms::owner_all) == ghc::filesystem::perms::none ||
+                (perms & ghc::filesystem::perms::group_all) == ghc::filesystem::perms::none
+            ) {
+                this->setText(
+                    m_info,
+                    "It seems like the installer lacks sufficient "
+                    "permissions to write files to the provided "
+                    "location; please install GD on another path. "
+                    #ifdef _WIN32
+                    "(Instructions for Steam: "
+                    "https://geode-sdk.github.io/docs/movegd.html)"
+                    #endif
+                );
+                m_canContinue = false;
+            }
         }
         m_frame->updateControls();
     }
@@ -137,6 +142,7 @@ public:
         this->addButton("Browse", &PageInstallSelectGD::onBrowse);
 
         m_info = this->addText("");
+        m_info->SetForegroundColour(wxTheColourDatabase->Find("RED"));
     }
 
     ghc::filesystem::path getPath() const { return m_path; }

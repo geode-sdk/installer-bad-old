@@ -16,6 +16,7 @@
 
 #include <Shlobj_core.h>
 #include <wx/msw/registry.h>
+#include <ImageHlp.h>
 
 #define PLATFORM_ASSET_IDENTIFIER "win"
 #define PLATFORM_NAME "Windows"
@@ -792,7 +793,20 @@ Result<> Manager::installGeodeFor(
             throwError(res);
         } else {
             wxQueueEvent(Manager::get(), new CallOnMainEvent(
-                [finishFunc]() -> void {
+                [this, branch, gdExePath, finishFunc]() -> void {
+                    Installation inst;
+                    inst.m_exe = gdExePath.filename().wstring();
+                    #if _WIN32
+                    inst.m_path = gdExePath.parent_path();
+                    #else
+                    inst.m_path = gdExePath / "Contents";
+                    #endif
+                    if (!m_installations.size()) {
+                        m_defaultInstallation = 0;
+                    }
+                    inst.m_branch = branch;
+                    this->addInstallation(inst);
+
                     if (finishFunc) finishFunc();
                 },
                 CALL_ON_MAIN,
@@ -979,5 +993,22 @@ bool Manager::needRequestAdminPriviledges() const {
     
     return false;
 
+    #endif
+}
+
+bool Manager::isValidGD(ghc::filesystem::path const& path) {
+    #if _WIN32
+    if (path.extension() != ".exe") {
+        return false;
+    }
+    DWORD origSum;
+    DWORD newSum;
+    if (MapFileAndCheckSumW(path.wstring().c_str(), &origSum, &newSum) != CHECKSUM_SUCCESS) {
+        return false;
+    }
+    return newSum == 0x695C07;
+    #else
+    return
+        ghc::filesystem::exists(path / "Contents" / "Frameworks" / "libfmod.dylib");
     #endif
 }
