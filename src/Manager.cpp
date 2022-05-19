@@ -766,6 +766,11 @@ Result<> Manager::installGeodeFor(
 
         auto installGeode = utilsFunc<cli::geode_install_geode>("geode_install_geode");
 
+        if (!installGeode) {
+            throwError("Fatal: Unable to fetch install function");
+            return;
+        }
+
         static DownloadProgressFunc progFunc;
         progFunc = progressFunc;
 
