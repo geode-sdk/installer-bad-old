@@ -10,6 +10,8 @@
 #define THE_SSCANF sscanf
 #endif
 
+VersionInfo::VersionInfo() {}
+
 VersionInfo::VersionInfo(int major, int minor, int patch) {
     this->m_major = major;
     this->m_minor = minor;

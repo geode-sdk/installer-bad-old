@@ -34,6 +34,8 @@ struct Installation {
     wxString m_exe;
     DevBranch m_branch;
 
+    VersionInfo m_loaderVersion;
+
     inline bool operator<(Installation const& other) const {
         return m_path < other.m_path;
     }
@@ -96,6 +98,7 @@ protected:
     InstallerMode m_mode = InstallerMode::Normal;
     ghc::filesystem::path m_loaderUpdatePath;
     nlohmann::json m_loadedConfigJson;
+    VersionInfo m_CLIVersion;
 
     void* loadFunctionFromUtilsLib(const char* name);
     template<typename Func>
@@ -140,7 +143,7 @@ public:
     void setSuiteDirectory(ghc::filesystem::path const&);
     ghc::filesystem::path getDefaultSuiteDirectory() const;
 
-    std::vector<Installation> const& getInstallations() const;
+    std::vector<Installation>& getInstallations();
     size_t getDefaultInstallation() const;
 
     Result<> loadData();
@@ -155,6 +158,9 @@ public:
     Result<> installCLI(
         ghc::filesystem::path const& cliZipPath
     );
+
+    void setCLIVersion(VersionInfo const&);
+
     Result<> addCLIToPath();
     Result<> installSuite(
         DevBranch branch,

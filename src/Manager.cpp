@@ -248,56 +248,25 @@ void Manager::checkForUpdates(
     DownloadErrorFunc errorFunc,
     UpdateCheckFinishFunc finishFunc
 ) {
-    auto installedVersion = VersionInfo(0, 0, 0);
 
-    #ifdef _WIN32
-    auto exe = (installation.m_path / "Geode.dll").wstring();
+    std::string url = "https://raw.githubusercontent.com/geode-sdk/suite/main/versions.json";
 
-    DWORD verHandle = 0;
-    unsigned int size = 0;
-    LPBYTE lpBuffer = nullptr;
-    auto verSize = GetFileVersionInfoSizeW(
-        exe.c_str(),
-        &verHandle
-    );
-
-    if (verSize != 0) {
-        auto verData = new char[verSize];
-        if (GetFileVersionInfo(exe.c_str(), verHandle, verSize, verData)) {
-            if (VerQueryValue(verData, L"\\", (VOID FAR* FAR*)&lpBuffer, &size)) {
-                if (size) {
-                    VS_FIXEDFILEINFO *verInfo = (VS_FIXEDFILEINFO *)lpBuffer;
-                    if (verInfo->dwSignature == 0xfeef04bd) {
-                        installedVersion = {
-                            ( verInfo->dwFileVersionMS >> 16 ) & 0xffff,
-                            ( verInfo->dwFileVersionMS >>  0 ) & 0xffff,
-                            ( verInfo->dwFileVersionLS >> 16 ) & 0xffff
-                        };
-                    }
-                }
-            }
-        }
-        delete[] verData;
+    if (installation.m_branch == DevBranch::Nightly) {
+        url = "https://raw.githubusercontent.com/geode-sdk/suite/nightly/versions.json";
     }
-    #else
-    return finishFunc(
-        installedVersion,
-        { 0, 0, 0 }
-    );
-    #endif
 
     this->webRequest(
-        "https://api.github.com/repos/geode-sdk/loader/releases/latest",
+        url,
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, finishFunc, installedVersion](
+        [this, errorFunc, finishFunc, installation](
             wxWebResponse const& res
         ) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
-                auto availableVersion = VersionInfo(json["tag_name"].get<std::string>());
-                finishFunc(installedVersion, availableVersion);
+                auto availableVersion = VersionInfo(json["loader"].get<std::string>());
+                finishFunc(installation.m_loaderVersion, availableVersion);
             } catch(std::exception& e) {
                 if (errorFunc) {
                     errorFunc("Unable to parse JSON: " + std::string(e.what()));
@@ -311,56 +280,20 @@ void Manager::checkCLIForUpdates(
     DownloadErrorFunc errorFunc,
     UpdateCheckFinishFunc finishFunc
 ) {
-    auto installedVersion = VersionInfo(0, 0, 0);
-
-    #ifdef _WIN32
-    auto exe = (m_binDirectory / "Geode.exe").wstring();
-
-    DWORD verHandle = 0;
-    unsigned int size = 0;
-    LPBYTE lpBuffer = nullptr;
-    auto verSize = GetFileVersionInfoSizeW(
-        exe.c_str(),
-        &verHandle
-    );
-
-    if (verSize != 0) {
-        auto verData = new char[verSize];
-        if (GetFileVersionInfo(exe.c_str(), verHandle, verSize, verData)) {
-            if (VerQueryValue(verData, L"\\", (VOID FAR* FAR*)&lpBuffer, &size)) {
-                if (size) {
-                    VS_FIXEDFILEINFO *verInfo = (VS_FIXEDFILEINFO *)lpBuffer;
-                    if (verInfo->dwSignature == 0xfeef04bd) {
-                        installedVersion = {
-                            ( verInfo->dwFileVersionMS >> 16 ) & 0xffff,
-                            ( verInfo->dwFileVersionMS >>  0 ) & 0xffff,
-                            ( verInfo->dwFileVersionLS >> 16 ) & 0xffff
-                        };
-                    }
-                }
-            }
-        }
-        delete[] verData;
-    }
-    #else
-    return finishFunc(
-        installedVersion,
-        { 0, 0, 0 }
-    );
-    #endif
+    std::string url = "https://raw.githubusercontent.com/geode-sdk/suite/main/versions.json";
 
     this->webRequest(
-        "https://api.github.com/repos/geode-sdk/cli/releases/latest",
+        url,
         false,
         errorFunc,
         nullptr,
-        [this, errorFunc, finishFunc, installedVersion](
+        [this, errorFunc, finishFunc](
             wxWebResponse const& res
         ) -> void {
             try {
                 auto json = nlohmann::json::parse(res.AsString());
-                auto availableVersion = VersionInfo(json["tag_name"].get<std::string>());
-                finishFunc(installedVersion, availableVersion);
+                auto availableVersion = VersionInfo(json["cli"].get<std::string>());
+                finishFunc(this->m_CLIVersion, availableVersion);
             } catch(std::exception& e) {
                 if (errorFunc) {
                     errorFunc("Unable to parse JSON: " + std::string(e.what()));
@@ -414,7 +347,7 @@ void Manager::setSuiteDirectory(ghc::filesystem::path const& path) {
     m_suiteDirectory = path;
 }
 
-std::vector<Installation> const& Manager::getInstallations() const {
+std::vector<Installation>& Manager::getInstallations() {
     return m_installations;
 }
 
@@ -463,12 +396,21 @@ Result<> Manager::loadData() {
             inst.m_branch =
                 install.contains("nightly") && install["nightly"].get<bool>() ?
                 DevBranch::Nightly : DevBranch::Stable;
+            inst.m_loaderVersion = VersionInfo(
+                install.contains("version") ? install["nightly"].get<std::string>() : "v0.0.0"
+            );
+
             this->addInstallation(inst);
         }
 
         if (json.contains("default-installation")) {
             m_defaultInstallation = json["default-installation"];
         }
+
+        if (json.contains("cli-version")) {
+            m_CLIVersion = VersionInfo(json["cli-version"].get<std::string>());
+        }
+
     } catch(std::exception& e) {
         return Err("Unable to parse " INSTALL_DATA_JSON ": " + std::string(e.what()));
     }
@@ -487,12 +429,15 @@ Result<> Manager::saveData() {
         m_loadedConfigJson["default-installation"] = m_defaultInstallation;
     }
 
+    m_loadedConfigJson["cli-version"] = m_CLIVersion.toString();
+
     m_loadedConfigJson["installations"] = nlohmann::json::array();
     for (auto x : m_installations) {
         nlohmann::json inst;
         inst["path"] = x.m_path.string();
         inst["executable"] = x.m_exe;
         inst["nightly"] = x.m_branch == DevBranch::Nightly;
+        inst["version"] = x.m_loaderVersion.toString();
         m_loadedConfigJson["installations"].push_back(inst);
     }
 
@@ -513,6 +458,9 @@ Result<> Manager::deleteData() {
     return Ok();
 }
 
+void Manager::setCLIVersion(VersionInfo const& v) {
+    m_CLIVersion = v;
+}
 
 Result<> Manager::installCLI(
     ghc::filesystem::path const& cliZipPath

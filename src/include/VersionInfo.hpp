@@ -17,12 +17,12 @@ public:
     };
 
 protected:
-    int m_major = 1;
+    int m_major = 0;
     int m_minor = 0;
     int m_patch = 0;
 
 public:
-    VersionInfo() = delete;
+    VersionInfo();
     VersionInfo(int major, int minor, int patch);
     VersionInfo(const char* versionString);
     VersionInfo(std::string const& versionString);
