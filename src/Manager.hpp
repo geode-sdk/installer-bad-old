@@ -206,6 +206,8 @@ public:
      */
     std::optional<ghc::filesystem::path> findDefaultGDPath() const;
 
+    static bool isValidGD(ghc::filesystem::path const& path);
+
     /**
      * Check if the given directory contains 
      * other external mods.

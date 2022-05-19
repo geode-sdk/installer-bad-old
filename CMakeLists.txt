@@ -40,6 +40,8 @@ if (WIN32)
 	add_executable(${PROJECT_NAME} WIN32 ${SOURCES} ${CMAKE_BINARY_DIR}/info.rc)
 	
 	target_precompile_headers(${PROJECT_NAME} PUBLIC ${HEADERS})
+
+	target_link_libraries(${PROJECT_NAME} PUBLIC imagehlp)
 else()
 	file(GLOB_RECURSE OBJC_SOURCES
 		src/*.mm
