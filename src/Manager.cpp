@@ -788,7 +788,20 @@ Result<> Manager::installGeodeFor(
             throwError(res);
         } else {
             wxQueueEvent(Manager::get(), new CallOnMainEvent(
-                [finishFunc]() -> void {
+                [this, branch, gdExePath, finishFunc]() -> void {
+                    Installation inst;
+                    inst.m_exe = gdExePath.filename().wstring();
+                    #if _WIN32
+                    inst.m_path = gdExePath.parent_path();
+                    #else
+                    inst.m_path = gdExePath / "Contents";
+                    #endif
+                    if (!m_installations.size()) {
+                        m_defaultInstallation = 0;
+                    }
+                    inst.m_branch = branch;
+                    this->addInstallation(inst);
+
                     if (finishFunc) finishFunc();
                 },
                 CALL_ON_MAIN,
