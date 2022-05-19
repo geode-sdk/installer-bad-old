@@ -59,7 +59,7 @@ protected:
     }
 
     void updateContinue() {
-        auto path = m_pathInput->GetValue().ToStdWstring();
+        auto path = ghc::filesystem::path(m_pathInput->GetValue().ToStdWstring());
         #if _WIN32
         m_canContinue =
             ghc::filesystem::exists(path) &&
@@ -73,11 +73,14 @@ protected:
         #else
         m_canContinue =
             ghc::filesystem::exists(path) &&
-            ghc::filesystem::is_directory(path);
+            ghc::filesystem::is_directory(path) && 
+            ghc::filesystem::exists(path / "Contents" / "Frameworks" / "libfmod.dylib");
+
+
         if (!m_canContinue) {
             this->setText(
                 m_info,
-                "Please enter a path to a valid directory"
+                "Please enter a path to a valid GD application"
             );
         }
         #endif
