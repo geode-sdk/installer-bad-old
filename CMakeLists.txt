@@ -47,7 +47,15 @@ else()
 		src/*.mm
 	)
 
+	set(CMAKE_OSX_DEPLOYMENT_TARGET 10.9)
+
 	add_executable(${PROJECT_NAME} ${SOURCES} ${OBJC_SOURCES})
+
+	add_custom_target(Package VERBATIM
+		COMMAND sh ${CMAKE_SOURCE_DIR}/pkg/pkg_mac.sh $<TARGET_FILE:GeodeInstaller>
+	)
+
+
 endif()
 
 target_link_libraries(${PROJECT_NAME} PUBLIC ${wxWidgets_LIBRARIES})

@@ -2,10 +2,10 @@
 
 #include "include/wx.hpp"
 #include <unordered_map>
-#include "fs/filesystem.hpp"
+#include "legacy/filesystem.hpp"
 #include <set>
 #include "include/Result.hpp"
-#include <optional>
+#include "legacy/optional.hpp"
 #include <wx/webrequest.h>
 #include <functional>
 #include "include/VersionInfo.hpp"
@@ -210,7 +210,7 @@ public:
      * the Steam installation location.
      * On MacOS, this returns IDK.
      */
-    std::optional<ghc::filesystem::path> findDefaultGDPath() const;
+    tl::optional<ghc::filesystem::path> findDefaultGDPath() const;
 
     static bool isValidGD(ghc::filesystem::path const& path);
 

@@ -2,7 +2,7 @@
 
 #include "include/wx.hpp"
 #include <unordered_map>
-#include "fs/filesystem.hpp"
+#include "legacy/filesystem.hpp"
 #include <set>
 #include "pages/Page.hpp"
 

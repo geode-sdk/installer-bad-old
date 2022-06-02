@@ -1,6 +1,6 @@
 #pragma once
 
 #include <string>
-#include <optional>
+#include "legacy/optional.hpp"
 
-std::optional<std::string> FigureOutGDPathMac();
+tl::optional<std::string> FigureOutGDPathMac();

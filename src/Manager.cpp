@@ -397,7 +397,7 @@ Result<> Manager::loadData() {
                 install.contains("nightly") && install["nightly"].get<bool>() ?
                 DevBranch::Nightly : DevBranch::Stable;
             inst.m_loaderVersion = VersionInfo(
-                install.contains("version") ? install["nightly"].get<std::string>() : "v0.0.0"
+                install.contains("version") ? install["version"].get<std::string>() : "v0.0.0"
             );
 
             this->addInstallation(inst);
@@ -716,7 +716,12 @@ Result<> Manager::installGeodeFor(
         auto installGeode = utilsFunc<cli::geode_install_geode>("geode_install_geode");
 
         if (!installGeode) {
-            throwError("Fatal: Unable to fetch install function");
+            #if _WIN32
+            throwError("Fatal: Unable to fetch install function.");
+            #else
+            std::string a = std::string("Fatal: Unable to fetch install function. DLLERR:") + dlerror();
+            throwError(a.c_str());
+            #endif
             return;
         }
 
@@ -820,7 +825,7 @@ Result<> Manager::deleteSaveDataFrom(Installation const& inst) {
 }
 
 
-std::optional<ghc::filesystem::path> Manager::findDefaultGDPath() const {
+tl::optional<ghc::filesystem::path> Manager::findDefaultGDPath() const {
     #ifdef _WIN32
 
     wxRegKey key(wxRegKey::HKLM, "Software\\WOW6432Node\\Valve\\Steam");

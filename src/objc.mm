@@ -1,8 +1,8 @@
 #include <Cocoa/Cocoa.h>
 #include <string>
-#include <optional>
+#include "legacy/optional.hpp"
 
-std::optional<std::string> FigureOutGDPathMac() {
+tl::optional<std::string> FigureOutGDPathMac() {
 	NSArray<NSRunningApplication*>* gd = [[NSWorkspace sharedWorkspace].runningApplications filteredArrayUsingPredicate:[NSPredicate predicateWithBlock:^BOOL(NSRunningApplication* ra, NSDictionary* bindings) {
 	    return [ra.localizedName isEqualToString:@"Geometry Dash"];
 	}]];
