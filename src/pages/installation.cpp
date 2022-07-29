@@ -124,15 +124,19 @@ public:
                 path = gdPath.value();
             } else {
                 this->addText(
-                    "Unable to automatically detect Geometry Dash path. "
+                    "Unable to automatically detect Geometry Dash path."
+                    "For the Steam MacOS game, the path should be"
+                    "/Users/[YOURUSERNAME]/Library/Application Support/Steam/steamapps/common/Geometry Dash/Geometry Dash.app"
                     "Please enter the path below:"
                 );
             }
         } else {
             this->addText(
                 "Please enter the path to Geometry Dash. "
-                "For the vanilla game, this should be the file "
-                "called \"GeometryDash.exe\", however if you're "
+                "For the Steam MacOS game, the path should be"
+                "/Users/[YourMacUserName]/Library/Application Support/Steam/steamapps/common/Geometry Dash/Geometry Dash.app"
+                "For the Steam Windows game, this should be the file "
+                "called \"GeometryDash.exe\", however if you are"
                 "installing on a GDPS, the name may differ."
             );
         }
